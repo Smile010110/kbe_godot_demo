@@ -40,3 +40,4 @@ build/
 # VSCode or JetBrains project files
 .vscode/
 .idea/
+kbe_csharp_plugins
