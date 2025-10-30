@@ -48,26 +48,26 @@ public class Avatar : AvatarBase
 		
 		if (this.isPlayer())
 		{
-			var monster = GD.Load<PackedScene>("res://Prefab/Player.tscn");
-			PlayerController monsterNode = monster.Instantiate<PlayerController>();
-			// monsterNode.trs
-			this.renderObj = monsterNode;
-			World.Instance.GetTree().CurrentScene.GetNode("World").AddChild(monsterNode);
-			monsterNode.Avatar = this;
-			monsterNode.GlobalPosition = new Vector3(position.x, 0, position.z);
+			// var monster = GD.Load<PackedScene>("res://Prefab/Player.tscn");
+			// PlayerController monsterNode = monster.Instantiate<PlayerController>();
+			// // monsterNode.trs
+			// this.renderObj = monsterNode;
+			// World.Instance.GetTree().CurrentScene.GetNode("World").AddChild(monsterNode);
+			// monsterNode.Avatar = this;
+			// monsterNode.GlobalPosition = new Vector3(position.x, 0, position.z);
 			
-			monsterNode.SetHeadInfo();
+			// monsterNode.SetHeadInfo();
 		   
 		}
 		else
 		{
-			var monster = GD.Load<PackedScene>("res://Prefab/Avatar.tscn");
-			AvatarController monsterNode = monster.Instantiate<AvatarController>();
-			this.renderObj = monsterNode;
-			monsterNode.Avatar = this;
-			World.Instance.GetTree().CurrentScene.GetNode("World").AddChild(monsterNode);
-			monsterNode.GlobalPosition = new Vector3(position.x, 0, position.z);
-			monsterNode.SetHeadInfo();
+			// var monster = GD.Load<PackedScene>("res://Prefab/Avatar.tscn");
+			// AvatarController monsterNode = monster.Instantiate<AvatarController>();
+			// this.renderObj = monsterNode;
+			// monsterNode.Avatar = this;
+			// World.Instance.GetTree().CurrentScene.GetNode("World").AddChild(monsterNode);
+			// monsterNode.GlobalPosition = new Vector3(position.x, 0, position.z);
+			// monsterNode.SetHeadInfo();
 		}
 	}
 

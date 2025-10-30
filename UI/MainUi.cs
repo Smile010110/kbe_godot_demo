@@ -106,18 +106,19 @@ public partial class MainUi : Control
 
 	void _on_login_btn_button_up()
 	{
-		GD.Print("连接到服务端....");
+		GD.Print("请求登录....");
 
 		// 序列化为 byte[]
-		LoginData login_data = new LoginData 
+		LoginData login_data = new LoginData
 		{
-			server_id = 1,
-			client_info = "kbengine_unity3d_demo"
+			ServerId = 1,
+			ClientInfo = "kbengine_unity3d_demo",
 		};
 
 		byte[] data_bytes = JsonSerializer.SerializeToUtf8Bytes(login_data);
-
 		KBEngineApp.app.login(NameEdit.Text, PasswordEdit.Text, data_bytes);
+
+		KBELog.DEBUG_MSG($"login ip: {GameConfig.GameGwHost} {GameConfig.GameGwPort}");
 	}
 
 	/// <summary>
@@ -145,7 +146,7 @@ public partial class MainUi : Control
 	void _on_enter_game_btn_button_up()
 	{
 		if (SelectAvatarItem == null) return;
-		// GD.Load<PackedScene>("res://World.tscn");
+		GD.Load<PackedScene>("res://World.tscn");
 		GetTree().ChangeSceneToFile("res://World.tscn");
 		//Account.Instance.baseEntityCall.selectAvatarGame(SelectAvatarItem.AvatarInfo.dbid);
 	}

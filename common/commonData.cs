@@ -5,9 +5,9 @@ namespace CommonData
 {
     public class LoginData
     {
-        public UInt16 server_id { get; set; }
-
-        public string client_info { get; set; }
+        public UInt16 ServerId { get; set; }
+        
+        public string ClientInfo { get; set; }
     }
 }
 

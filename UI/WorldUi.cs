@@ -14,12 +14,12 @@ public partial class WorldUi : Control
 	
 	public void _on_button_button_up()
 	{
-		PlayerController.Instance?.Avatar?.cellEntityCall.relive(1); // 调用复活方法
+		// PlayerController.Instance?.Player?.cellEntityCall.relive(1); // 调用复活方法
 	}
 
 
 	public override void _Process(double delta)
 	{
-		_button.Visible = PlayerController.Instance?.Avatar?.state == 1;
+		// _button.Visible = PlayerController.Instance?.Player?.state == 1;
 	}
 }

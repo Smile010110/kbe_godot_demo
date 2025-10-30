@@ -17,7 +17,7 @@ public partial class PlayerController : Node3D
     
     public static PlayerController Instance;
 
-    public Avatar Avatar;
+    public Player Player;
     
 
     public override void _Ready()
@@ -34,23 +34,24 @@ public partial class PlayerController : Node3D
 
     public int GetStatus()
     {
-        if (Avatar == null) return -1;
-        return Avatar.state;
+        if (Player == null) return -1;
+        // return Player.state;
+        return 0;
     }
 
     public void SetHeadInfo()
     {
-        _nameLabel.Text = this.Avatar.name;
-        _hpLabel.Text = this.Avatar.HP.ToString() + "/" + this.Avatar.HP_Max.ToString();
+        _nameLabel.Text = "hello";
+        _hpLabel.Text = 100.ToString() + "/" + 100.ToString();
     }
 
     public override void _Process(double delta)
     {
         
-        Avatar.position = _characterBody.GlobalPosition;
-        Avatar.direction = new KBVector3(_characterBody.GlobalRotationDegrees.X,_characterBody.GlobalRotationDegrees.Y+180,_characterBody.GlobalRotationDegrees.Z);
+        Player.position = _characterBody.GlobalPosition;
+        Player.direction = new KBVector3(_characterBody.GlobalRotationDegrees.X,_characterBody.GlobalRotationDegrees.Y+180,_characterBody.GlobalRotationDegrees.Z);
 
-        if (!Avatar.isPlayer())
+        if (!Player.isPlayer())
         {
             // 获取当前位置
             var currentPos = _characterBody.GlobalTransform.Origin;
