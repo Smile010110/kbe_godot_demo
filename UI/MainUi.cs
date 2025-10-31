@@ -119,6 +119,9 @@ public partial class MainUi : Control
 		KBEngineApp.app.login(NameEdit.Text, PasswordEdit.Text, data_bytes);
 
 		KBELog.DEBUG_MSG($"login ip: {GameConfig.GameGwHost} {GameConfig.GameGwPort}");
+		
+		// GD.Load<PackedScene>("res://World.tscn");
+		// GetTree().ChangeSceneToFile("res://World.tscn");
 	}
 
 	/// <summary>
