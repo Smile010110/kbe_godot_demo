@@ -37,10 +37,18 @@ public partial class MainUi : Control
 
 		AvatarListContainer = GetNode<BoxContainer>("SelectAvatar/CenterContainer/AvatarList");
 
-
 		Login.Visible = true;
 		CreateAvatar.Visible = false;
 		SelectAvatar.Visible = false;
+
+        // 订阅Player的场景切换事件
+        Player.OnEnterWorldRequested += OnPlayerEnterWorldRequested;
+	}
+
+	public override void _ExitTree()
+	{
+		Player.OnEnterWorldRequested -= OnPlayerEnterWorldRequested;
+		base._ExitTree();
 	}
 
 	public void OpenLoginPlane()
@@ -64,6 +72,14 @@ public partial class MainUi : Control
 		CreateAvatar.Visible = false;
 	}
 
+    // 处理Player进入世界的事件
+    private void OnPlayerEnterWorldRequested()
+    {
+		KBELog.DEBUG_MSG("MainUI: 收到Player进入世界事件，切换场景到World.tscn");
+
+		GD.Load<PackedScene>("res://World.tscn");
+        GetTree().ChangeSceneToFile("res://World.tscn");
+    }
 
 	/// <summary>
 	/// 创建角色列表
@@ -172,7 +188,5 @@ public partial class MainUi : Control
 	{
 		//Account.Instance.baseEntityCall.reqRemoveAvatarDBID(SelectAvatarItem.AvatarInfo.dbid);
 	}
-
-
 
 }
