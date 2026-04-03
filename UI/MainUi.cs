@@ -1,192 +1,190 @@
 using Godot;
 using System;
-using System.Text;
 using System.Text.Json;
 using KBEngine;
 using CommonData;
 
-
 public partial class MainUi : Control
 {
-	private Control Login;
-	private Control CreateAvatar;
-	private Control SelectAvatar;
-
-	private LineEdit NameEdit;
-	private LineEdit PasswordEdit;
-
-	private LineEdit CreateAvatarNameEdit;
-	private BoxContainer AvatarListContainer;
-	private PackedScene _selectAvatarItemTscn = GD.Load<PackedScene>("res://UI/SelectAvatar/select_avatar_item.tscn");
+	private const string LoginConfigPath = "user://login.cfg";
+	private const string LoginConfigSection = "login";
+	private static readonly string[] NicknamePrefixes = { "Swift", "Quiet", "Iron", "Sunny", "Frost", "Wild", "Bright", "Amber" };
+	private static readonly string[] NicknameSuffixes = { "Fox", "Wolf", "Leaf", "River", "Stone", "Falcon", "Star", "Pine" };
 
 	public static MainUi Instance;
 
-	public SelectAvatarItem SelectAvatarItem;
+	private LineEdit _userNameEdit;
+	private LineEdit _passwordEdit;
+	private LineEdit _nameEdit;
+	private CheckBox _rememberLoginCheckBox;
+	private Button _loginButton;
+	private Label _statusLabel;
 
 	public override void _Ready()
 	{
 		Instance = this;
-		Login = GetNode<Control>("Login");
-		CreateAvatar = GetNode<Control>("CreateAvatar");
-		SelectAvatar = GetNode<Control>("SelectAvatar");
+		_userNameEdit = GetNode<LineEdit>("CenterContainer/Panel/VBox/UserNameEdit");
+		_passwordEdit = GetNode<LineEdit>("CenterContainer/Panel/VBox/PasswordEdit");
+		_nameEdit = GetNode<LineEdit>("CenterContainer/Panel/VBox/NameRow/NameEdit");
+		_rememberLoginCheckBox = GetNode<CheckBox>("CenterContainer/Panel/VBox/RememberLoginCheckBox");
+		_loginButton = GetNode<Button>("CenterContainer/Panel/VBox/LoginBtn");
+		_statusLabel = GetNode<Label>("CenterContainer/Panel/VBox/StatusLabel");
 
+		_statusLabel.Text = $"Ready to connect to {GameConfig.KbEngineHost}:{GameConfig.KbEnginePort}";
+		LoadRememberedLogin();
 
-		NameEdit = GetNode<LineEdit>("Login/UserNameEdit");
-		PasswordEdit = GetNode<LineEdit>("Login/PasswordEdit");
-		CreateAvatarNameEdit = GetNode<LineEdit>("CreateAvatar/CreateAvatarNameEdit");
-
-		AvatarListContainer = GetNode<BoxContainer>("SelectAvatar/CenterContainer/AvatarList");
-
-		Login.Visible = true;
-		CreateAvatar.Visible = false;
-		SelectAvatar.Visible = false;
-
-        // 订阅Player的场景切换事件
-        Player.OnEnterWorldRequested += OnPlayerEnterWorldRequested;
+		Player.OnEnterWorldRequested += OnPlayerEnterWorldRequested;
+		KBEngine.Event.registerOut(EventOutTypes.onConnectionState, this, nameof(OnConnectionState));
+		KBEngine.Event.registerOut(EventOutTypes.onLoginFailed, this, nameof(OnLoginFailed));
+		KBEngine.Event.registerOut(EventOutTypes.onLoginBaseapp, this, nameof(OnLoginBaseapp));
+		KBEngine.Event.registerOut(EventOutTypes.onDisconnected, this, nameof(OnDisconnected));
 	}
 
 	public override void _ExitTree()
 	{
 		Player.OnEnterWorldRequested -= OnPlayerEnterWorldRequested;
+		KBEngine.Event.deregisterOut(EventOutTypes.onConnectionState, this, nameof(OnConnectionState));
+		KBEngine.Event.deregisterOut(EventOutTypes.onLoginFailed, this, nameof(OnLoginFailed));
+		KBEngine.Event.deregisterOut(EventOutTypes.onLoginBaseapp, this, nameof(OnLoginBaseapp));
+		KBEngine.Event.deregisterOut(EventOutTypes.onDisconnected, this, nameof(OnDisconnected));
 		base._ExitTree();
 	}
 
-	public void OpenLoginPlane()
+	public void OnConnectionState(bool success)
 	{
-		Login.Visible = true;
-		CreateAvatar.Visible = false;
-		SelectAvatar.Visible = false;
+		_statusLabel.Text = success ? "Connected to loginapp, waiting for baseapp..." : "Connection failed.";
+		_loginButton.Disabled = false;
 	}
 
-	public void OpenCreateAvatarPlane()
+	public void OnLoginFailed(ushort retCode, byte[] _serverData)
 	{
-		Login.Visible = false;
-		SelectAvatar.Visible = false;
-		CreateAvatar.Visible = true;
+		var errorMessage = KBEngineApp.app != null ? KBEngineApp.app.serverErr(retCode) : $"retCode={retCode}";
+		_statusLabel.Text = $"Login failed: {errorMessage}";
+		_loginButton.Disabled = false;
 	}
 
-	public void OpenSelectAvatarPlane()
+	public void OnLoginBaseapp()
 	{
-		Login.Visible = false;
-		SelectAvatar.Visible = true;
-		CreateAvatar.Visible = false;
+		_statusLabel.Text = "Baseapp login succeeded, waiting for Player entity...";
 	}
 
-    // 处理Player进入世界的事件
-    private void OnPlayerEnterWorldRequested()
-    {
-		KBELog.DEBUG_MSG("MainUI: 收到Player进入世界事件，切换场景到World.tscn");
-
-		GD.Load<PackedScene>("res://World.tscn");
-        GetTree().ChangeSceneToFile("res://World.tscn");
-    }
-
-	/// <summary>
-	/// 创建角色列表
-	/// </summary>
-	/// <param name="avatarInfoList"></param>
-	//public void UI_CreateAvatarList(AVATAR_INFOS_LIST avatarInfoList)
-	//{
-	//this.OpenSelectAvatarPlane();
-	//
-	//foreach (var child in AvatarListContainer.GetChildren())
-	//{
-	//child.QueueFree();
-	//}
-	//
-	//for (var i = 0; i < avatarInfoList.values.Count; i++)
-	//{
-	//var avatarInfo = avatarInfoList.values[i];
-	//
-	//SelectAvatarItem instanceNode = _selectAvatarItemTscn.Instantiate() as SelectAvatarItem;
-	//if (instanceNode == null) continue;
-	//instanceNode.AvatarInfo = avatarInfo;
-	//
-	//instanceNode.Text = avatarInfo.name;
-	//instanceNode.Index = i;
-	//
-	//AvatarListContainer.AddChild(instanceNode);
-	//}
-	//}
-
-	/// <summary>
-	/// 选择角色
-	/// </summary>
-	/// <param name="selectAvatarItem"></param>
-	public void UI_OnSelectAvatarItemClick(SelectAvatarItem selectAvatarItem)
+	public void OnDisconnected()
 	{
-		this.SelectAvatarItem = selectAvatarItem;
+		_statusLabel.Text = "Disconnected from server.";
+		_loginButton.Disabled = false;
 	}
 
-
-
-	void _on_login_btn_button_up()
+	private void OnPlayerEnterWorldRequested()
 	{
-		GD.Print("请求登录....");
+		_statusLabel.Text = "Player is ready, loading world...";
+		GetTree().ChangeSceneToFile("res://World.tscn");
+	}
 
-		// 序列化为 byte[]
-		LoginData login_data = new LoginData
+	private void _on_remember_login_check_box_toggled(bool toggledOn)
+	{
+		if (!toggledOn)
 		{
-			ServerId = 1,
-			ClientInfo = "kbengine_unity3d_demo",
+			ClearRememberedLogin();
+		}
+	}
+
+	private void _on_login_btn_button_up()
+	{
+		if (KBEngineApp.app == null)
+		{
+			_statusLabel.Text = "KBEngine is not initialized yet.";
+			return;
+		}
+
+		var account = _userNameEdit.Text.Trim();
+		var password = _passwordEdit.Text.Trim();
+		var displayName = _nameEdit.Text.Trim();
+
+		if (string.IsNullOrWhiteSpace(account) || string.IsNullOrWhiteSpace(password))
+		{
+			_statusLabel.Text = "Username and password are required.";
+			return;
+		}
+
+		if (string.IsNullOrWhiteSpace(displayName))
+		{
+			displayName = GenerateRandomNickname();
+			_nameEdit.Text = displayName;
+		}
+
+		PersistLoginPreference(account, password, displayName);
+
+		var loginData = new LoginData
+		{
+			ServerId = GameConfig.DefaultServerId,
+			ClientInfo = GameConfig.ClientInfo,
+			Name = displayName,
 		};
 
-		byte[] data_bytes = JsonSerializer.SerializeToUtf8Bytes(login_data);
-		KBEngineApp.app.login(NameEdit.Text, PasswordEdit.Text, data_bytes);
-
-		KBELog.DEBUG_MSG($"login ip: {GameConfig.GameGwHost} {GameConfig.GameGwPort}");
-		
-		// GD.Load<PackedScene>("res://World.tscn");
-		// GetTree().ChangeSceneToFile("res://World.tscn");
+		var payload = JsonSerializer.SerializeToUtf8Bytes(loginData);
+		_statusLabel.Text = $"Logging in to {GameConfig.KbEngineHost}:{GameConfig.KbEnginePort}...";
+		_loginButton.Disabled = true;
+		KBEngineApp.app.login(account, password, payload);
 	}
 
-	/// <summary>
-	/// 创建角色按钮点击
-	/// </summary>
-	void _on_create_avatar_btn_button_up()
+	private void _on_random_name_btn_button_up()
 	{
-		//Account.Instance.baseEntityCall.reqCreateAvatar(1,this.CreateAvatarNameEdit.Text);
+		_nameEdit.Text = GenerateRandomNickname();
 	}
 
-
-	/// <summary>
-	/// 创建角色返回按钮点击
-	/// </summary>
-	void _on_return_to_select_avatar_btn_button_up()
+	private void LoadRememberedLogin()
 	{
-		Login.Visible = false;
-		SelectAvatar.Visible = true;
-		CreateAvatar.Visible = false;
+		var config = new ConfigFile();
+		if (config.Load(LoginConfigPath) != Error.Ok)
+		{
+			_rememberLoginCheckBox.ButtonPressed = false;
+			return;
+		}
+
+		var rememberLogin = (bool)config.GetValue(LoginConfigSection, "remember", false);
+		_rememberLoginCheckBox.ButtonPressed = rememberLogin;
+
+		if (!rememberLogin)
+		{
+			return;
+		}
+
+		_userNameEdit.Text = (string)config.GetValue(LoginConfigSection, "username", string.Empty);
+		_passwordEdit.Text = (string)config.GetValue(LoginConfigSection, "password", string.Empty);
+		_nameEdit.Text = (string)config.GetValue(LoginConfigSection, "display_name", string.Empty);
 	}
 
-	/// <summary>
-	/// 进入游戏按钮点击
-	/// </summary>
-	void _on_enter_game_btn_button_up()
+	private void PersistLoginPreference(string account, string password, string displayName)
 	{
-		if (SelectAvatarItem == null) return;
-		GD.Load<PackedScene>("res://World.tscn");
-		GetTree().ChangeSceneToFile("res://World.tscn");
-		//Account.Instance.baseEntityCall.selectAvatarGame(SelectAvatarItem.AvatarInfo.dbid);
+		if (!_rememberLoginCheckBox.ButtonPressed)
+		{
+			ClearRememberedLogin();
+			return;
+		}
+
+		var config = new ConfigFile();
+		config.SetValue(LoginConfigSection, "remember", true);
+		config.SetValue(LoginConfigSection, "username", account);
+		config.SetValue(LoginConfigSection, "password", password);
+		config.SetValue(LoginConfigSection, "display_name", displayName);
+		config.Save(LoginConfigPath);
 	}
 
-	/// <summary>
-	/// 选择角色页面创建角色按钮点击
-	/// </summary>
-	void _on_goto_create_avatar_btn_button_up()
+	private void ClearRememberedLogin()
 	{
-		Login.Visible = false;
-		SelectAvatar.Visible = false;
-		CreateAvatar.Visible = true;
+		if (!FileAccess.FileExists(LoginConfigPath))
+		{
+			return;
+		}
+
+		DirAccess.RemoveAbsolute(ProjectSettings.GlobalizePath(LoginConfigPath));
 	}
 
-
-	/// <summary>
-	/// 删除角色按钮点击
-	/// </summary>
-	void _on_del_avatar_btn_button_up()
+	private static string GenerateRandomNickname()
 	{
-		//Account.Instance.baseEntityCall.reqRemoveAvatarDBID(SelectAvatarItem.AvatarInfo.dbid);
+		var prefix = NicknamePrefixes[Random.Shared.Next(NicknamePrefixes.Length)];
+		var suffix = NicknameSuffixes[Random.Shared.Next(NicknameSuffixes.Length)];
+		var number = Random.Shared.Next(100, 999);
+		return $"{prefix}{suffix}{number}";
 	}
-
 }

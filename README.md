@@ -1,4 +1,4 @@
-﻿# Godot Demo
+# Godot Demo
 
 版本：Godot Engine v4.4.1.stable.mono
 
@@ -7,43 +7,34 @@
 服务端：https://github.com/KBEngineLab/demo_kbengine_nex_assets
 
 
-# 功能：
+# 当前整理结果
 
+项目现已按 `kbe_csharp_plugins/` 里的生成内容收敛。
+
+- 当前生成 SDK 只包含：`Player`、`GameMgr`、`Server`、`Space`、`WebServer`
+- 客户端主流程整理为：`autoload App -> Login UI -> Player -> World`
+- 旧的 `Account/Avatar/Monster/NPC/Gate/Test` 客户端脚本已移除，因为它们和当前生成 SDK 不匹配
+- 世界内保留的是 `Player` 表现层与基础移动/镜头能力
+
+# 当前支持
+
+- [x] 连接 KBEngine
 - [x] 登录
-- [x] 注册
-- [x] 创建角色
-- [x] 删除角色
-- [x] 进入世界
-- [x] 怪物创建
-- [x] 玩家创建
-- [x] NPC创建
-- [x] 传送门创建
-- [ ] 死亡/复活 无
-- [ ] 攻击/攻击动画 无
+- [x] 创建 Player 实体并进入世界
+- [x] 本地玩家移动
+- [x] 远端 Player 同步显示
+- [ ] Account/Avatar 选角链路
+- [ ] Monster/NPC/Gate 客户端实体
+- [ ] 死亡/复活
+- [ ] 攻击/攻击动画
 
 # sdk 生成
 
-start "" "%KBE_BIN_PATH%/kbcmd.exe" --clientsdk=csharp --outpath="%~dp0/kbengine_csharp_plugins"
+start "" "%KBE_BIN_PATH%/kbcmd.exe" --clientsdk=csharp --outpath="%~dp0/kbe_csharp_plugins"
 
-将kbengine_csharp_plugins 覆盖 /kbengine_csharp_plugins
-
-
-
-# C\#工程文件生成
-
-![alt text](gitimage/image_4.png)
+将最新生成结果覆盖到 `/kbe_csharp_plugins`
 
 
-# 截图：
+# 说明
 
-
-
-![img.png](gitimage/image.png)
-
-![img_1.png](gitimage/image_1.png)
-
-
-![img_2.png](gitimage/image_2.png)
-
-
-![img_3.png](gitimage/image_3.png)
+`kbe_csharp_plugins` 是这份工程的事实来源。每次服务端实体定义变化后，都应该先重新生成 SDK，再按生成出来的 `*Base.cs` 和 `EntityDef.cs` 调整手写层。

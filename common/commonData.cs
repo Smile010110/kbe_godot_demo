@@ -8,6 +8,8 @@ namespace CommonData
         public UInt16 ServerId { get; set; }
         
         public string ClientInfo { get; set; }
+
+        public string Name { get; set; }
     }
 }
 

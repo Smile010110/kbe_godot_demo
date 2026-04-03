@@ -1,25 +1,28 @@
 using Godot;
-using System;
 
 public partial class WorldUi : Control
 {
-	
-	private Button _button;
-	
+	private Label _infoLabel;
+
 	public override void _Ready()
 	{
-		_button = GetNode<Button>("Button");
+		_infoLabel = GetNode<Label>("MarginContainer/InfoLabel");
 	}
-	
-	
-	public void _on_button_button_up()
-	{
-		// PlayerController.Instance?.Player?.cellEntityCall.relive(1); // 调用复活方法
-	}
-
 
 	public override void _Process(double delta)
 	{
-		// _button.Visible = PlayerController.Instance?.Player?.state == 1;
+		var player = PlayerController.LocalInstance?.Player;
+		var entityId = player != null ? player.id.ToString() : "-";
+		var dbid = player != null ? player.dbid.ToString() : "-";
+		var serverId = player != null ? player.server_id.ToString() : "-";
+		var spaceUtype = player != null ? player.space_utype.ToString() : "-";
+		var moveSpeed = player?.motion != null ? player.motion.moveSpeed.ToString() : "-";
+		var hp = player?.combat != null ? player.combat.hp.ToString() : "-";
+		var mp = player?.combat != null ? player.combat.mp.ToString() : "-";
+		var positionText = player != null
+			? $"({player.position.x:0.00}, {player.position.y:0.00}, {player.position.z:0.00})"
+			: "-";
+
+		_infoLabel.Text = $"WASD move\nSpace jump\nHold RMB to rotate camera\nEntity: {entityId}\nDBID: {dbid}\nServer: {serverId}\nSpaceUType: {spaceUtype}\nPosition: {positionText}\nMoveSpeed: {moveSpeed}\nHP: {hp}\nMP: {mp}";
 	}
 }

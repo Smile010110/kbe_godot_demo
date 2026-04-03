@@ -41,12 +41,12 @@ script = ExtResource("3_ec3bh")
 
 [node name="NameLabel" type="Label3D" parent="PlayerCharacterBody3D/HeadInfo"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.55309, 0)
-text = "姓名"
+text = "Name"
 font_size = 40
 
 [node name="HPLabel" type="Label3D" parent="PlayerCharacterBody3D/HeadInfo"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.24526, 0)
-text = "100/100"
+text = "HP / MP"
 font_size = 40
 
 [node name="CameraPivot" type="Node3D" parent="."]

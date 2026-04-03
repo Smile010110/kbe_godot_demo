@@ -1,6 +1,6 @@
 [gd_scene load_steps=2 format=3 uid="uid://cw68gay0bgbqs"]
 
-[ext_resource type="Script" uid="uid://ckvyvucyrb6wj" path="res://UI/WorldUi.cs" id="1_u51o7"]
+[ext_resource type="Script" uid="uid://ckvyvucyrb6wj" path="res://UI/WorldUi.cs" id="1"]
 
 [node name="WorldUi" type="Control"]
 layout_mode = 3
@@ -9,14 +9,16 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
-script = ExtResource("1_u51o7")
+script = ExtResource("1")
 
-[node name="Button" type="Button" parent="."]
+[node name="MarginContainer" type="MarginContainer" parent="."]
 layout_mode = 0
-offset_left = 489.0
-offset_top = 292.0
-offset_right = 659.0
-offset_bottom = 347.0
-text = "复活"
+offset_left = 16.0
+offset_top = 16.0
+offset_right = 420.0
+offset_bottom = 240.0
 
-[connection signal="button_up" from="Button" to="." method="_on_button_button_up"]
+[node name="InfoLabel" type="Label" parent="MarginContainer"]
+layout_mode = 2
+text = "Loading world..."
+autowrap_mode = 3
