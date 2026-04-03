@@ -1,0 +1,36 @@
+using Godot;
+
+public interface IWorldEntityView
+{
+	string DisplayName { get; }
+	ulong HitPoints { get; }
+	ulong ManaPoints { get; }
+	byte RawMoveSpeed { get; }
+	float MoveSpeedUnits { get; }
+	Vector3 WorldPosition { get; }
+	Vector3 WorldRotationDegrees { get; }
+	Color NameplateColor { get; }
+	bool IsLocallyControlled { get; }
+}
+
+public interface ILocallyControlledWorldEntity : IWorldEntityView
+{
+	void ApplyLocalTransform(Vector3 worldPosition, Vector3 worldRotationDegrees);
+}
+
+public interface IServerDrivenWorldEntity : IWorldEntityView
+{
+}
+
+public interface IWorldEntityRenderHooks
+{
+	void RefreshRenderInfo();
+	void RefreshRenderTransform();
+}
+
+public interface IWorldEntityController<TEntity> where TEntity : class
+{
+	void BindEntity(TEntity entity);
+	void SetHeadInfo();
+	void UpdateFromEntity();
+}

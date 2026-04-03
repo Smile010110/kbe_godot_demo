@@ -1,33 +1,26 @@
-using System;
 using Godot;
 using KBEngine;
 
-public class Player : PlayerBase, ILocallyControlledWorldEntity, IWorldEntityRenderHooks
+public class Monster : MonsterBase, IServerDrivenWorldEntity, IWorldEntityRenderHooks
 {
-	public static event Action OnLocalPlayerEnterWorldRequested;
-	public static Player LocalPlayer { get; private set; }
+	private readonly WorldEntityRenderBinding<Monster, MonsterController> _renderBinding;
 
-	private readonly WorldEntityRenderBinding<Player, PlayerController> _renderBinding;
-
-	public Player()
+	public Monster()
 	{
-		_renderBinding = new WorldEntityRenderBinding<Player, PlayerController>(this, this, "res://Prefab/Player.tscn");
+		_renderBinding = new WorldEntityRenderBinding<Monster, MonsterController>(this, this, "res://Prefab/Monster.tscn");
 	}
 
-	public bool IsLocalPlayer => isPlayer();
-	public bool IsLocallyControlled => IsLocalPlayer;
+	public bool IsLocallyControlled => false;
 	public int EntityId => id;
 	public ulong DatabaseId => dbid;
-	public ushort ServerId => server_id;
-	public uint SpaceUtype => space_utype;
-	public string DisplayName => string.IsNullOrWhiteSpace(name) ? $"Player {id}" : name;
+	public string DisplayName => string.IsNullOrWhiteSpace(name) ? $"Monster {id}" : name;
 	public ulong HitPoints => combat != null ? combat.hp : 0UL;
 	public ulong ManaPoints => combat != null ? combat.mp : 0UL;
 	public byte RawMoveSpeed => motion != null ? motion.moveSpeed : (byte)0;
 	public float MoveSpeedUnits => Mathf.Max(0.1f, RawMoveSpeed / 10.0f);
 	public Vector3 WorldPosition => new Vector3(position.x, position.y, position.z);
 	public Vector3 WorldRotationDegrees => new Vector3(direction.x, direction.y - 180.0f, direction.z);
-	public NameplateStyle NameplateStyle => ResolveNameplateStyle();
+	public NameplateStyle NameplateStyle => NameplateStyle.Monster;
 	public Color NameplateColor => NameplatePalette.Resolve(NameplateStyle);
 
 	public override void __init__()
@@ -41,20 +34,9 @@ public class Player : PlayerBase, ILocallyControlledWorldEntity, IWorldEntityRen
 	{
 		base.onEnterWorld();
 
-		if (IsLocalPlayer)
-		{
-			LocalPlayer = this;
-		}
-
 		if (World.Instance == null)
 		{
 			_renderBinding.WaitForWorld();
-
-			if (IsLocalPlayer)
-			{
-				OnLocalPlayerEnterWorldRequested?.Invoke();
-			}
-
 			return;
 		}
 
@@ -65,11 +47,6 @@ public class Player : PlayerBase, ILocallyControlledWorldEntity, IWorldEntityRen
 	{
 		base.onLeaveWorld();
 		_renderBinding.Cleanup();
-
-		if (ReferenceEquals(LocalPlayer, this))
-		{
-			LocalPlayer = null;
-		}
 	}
 
 	public override void onDestroy()
@@ -84,16 +61,6 @@ public class Player : PlayerBase, ILocallyControlledWorldEntity, IWorldEntityRen
 		RefreshRenderInfo();
 	}
 
-	public override void onServer_idChanged(ushort oldValue)
-	{
-		RefreshRenderInfo();
-	}
-
-	public override void onSpace_utypeChanged(uint oldValue)
-	{
-		RefreshRenderInfo();
-	}
-
 	public override void onNameChanged(string oldValue)
 	{
 		RefreshRenderInfo();
@@ -102,31 +69,13 @@ public class Player : PlayerBase, ILocallyControlledWorldEntity, IWorldEntityRen
 	public override void onPositionChanged(KBVector3 oldValue)
 	{
 		base.onPositionChanged(oldValue);
-
-		if (!IsLocalPlayer)
-		{
-			RefreshRenderTransform();
-		}
+		RefreshRenderTransform();
 	}
 
 	public override void onDirectionChanged(KBVector3 oldValue)
 	{
 		base.onDirectionChanged(oldValue);
-
-		if (!IsLocalPlayer)
-		{
-			RefreshRenderTransform();
-		}
-	}
-
-	public void ApplyLocalTransform(Vector3 worldPosition, Vector3 worldRotationDegrees)
-	{
-		position = worldPosition;
-		direction = new KBVector3(
-			worldRotationDegrees.X,
-			worldRotationDegrees.Y + 180.0f,
-			worldRotationDegrees.Z
-		);
+		RefreshRenderTransform();
 	}
 
 	public void RefreshRenderInfo()
@@ -137,17 +86,6 @@ public class Player : PlayerBase, ILocallyControlledWorldEntity, IWorldEntityRen
 	public void RefreshRenderTransform()
 	{
 		_renderBinding.RefreshTransform();
-	}
-
-	private NameplateStyle ResolveNameplateStyle()
-	{
-		if (IsLocalPlayer)
-		{
-			return NameplateStyle.Self;
-		}
-
-		// Team relation is not exposed in the current generated protocol yet.
-		return NameplateStyle.Neutral;
 	}
 
 	private void OnWorldReady()

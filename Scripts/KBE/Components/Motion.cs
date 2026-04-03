@@ -14,9 +14,9 @@ namespace KBEngine
 
 		private void RefreshOwnerPresentation()
 		{
-			if (owner?.renderObj is global::PlayerController playerController)
+			if (owner is global::IWorldEntityRenderHooks entity)
 			{
-				playerController.SetHeadInfo();
+				entity.RefreshRenderInfo();
 			}
 		}
 	}

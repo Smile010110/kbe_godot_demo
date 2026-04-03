@@ -1,7 +1,6 @@
 using Godot;
 using System;
 using System.Text.Json;
-using KBEngine;
 using CommonData;
 
 public partial class MainUi : Control
@@ -19,6 +18,7 @@ public partial class MainUi : Control
 	private CheckBox _rememberLoginCheckBox;
 	private Button _loginButton;
 	private Label _statusLabel;
+	private KbeClient _client;
 
 	public override void _Ready()
 	{
@@ -29,24 +29,34 @@ public partial class MainUi : Control
 		_rememberLoginCheckBox = GetNode<CheckBox>("CenterContainer/Panel/VBox/RememberLoginCheckBox");
 		_loginButton = GetNode<Button>("CenterContainer/Panel/VBox/LoginBtn");
 		_statusLabel = GetNode<Label>("CenterContainer/Panel/VBox/StatusLabel");
+		_client = App.Instance?.Client;
 
 		_statusLabel.Text = $"Ready to connect to {GameConfig.KbEngineHost}:{GameConfig.KbEnginePort}";
 		LoadRememberedLogin();
 
-		Player.OnEnterWorldRequested += OnPlayerEnterWorldRequested;
-		KBEngine.Event.registerOut(EventOutTypes.onConnectionState, this, nameof(OnConnectionState));
-		KBEngine.Event.registerOut(EventOutTypes.onLoginFailed, this, nameof(OnLoginFailed));
-		KBEngine.Event.registerOut(EventOutTypes.onLoginBaseapp, this, nameof(OnLoginBaseapp));
-		KBEngine.Event.registerOut(EventOutTypes.onDisconnected, this, nameof(OnDisconnected));
+		Player.OnLocalPlayerEnterWorldRequested += OnPlayerEnterWorldRequested;
+
+		if (_client != null)
+		{
+			_client.ConnectionStateChanged += OnConnectionState;
+			_client.LoginFailed += OnLoginFailed;
+			_client.BaseappLoginSucceeded += OnLoginBaseapp;
+			_client.Disconnected += OnDisconnected;
+		}
 	}
 
 	public override void _ExitTree()
 	{
-		Player.OnEnterWorldRequested -= OnPlayerEnterWorldRequested;
-		KBEngine.Event.deregisterOut(EventOutTypes.onConnectionState, this, nameof(OnConnectionState));
-		KBEngine.Event.deregisterOut(EventOutTypes.onLoginFailed, this, nameof(OnLoginFailed));
-		KBEngine.Event.deregisterOut(EventOutTypes.onLoginBaseapp, this, nameof(OnLoginBaseapp));
-		KBEngine.Event.deregisterOut(EventOutTypes.onDisconnected, this, nameof(OnDisconnected));
+		Player.OnLocalPlayerEnterWorldRequested -= OnPlayerEnterWorldRequested;
+
+		if (_client != null)
+		{
+			_client.ConnectionStateChanged -= OnConnectionState;
+			_client.LoginFailed -= OnLoginFailed;
+			_client.BaseappLoginSucceeded -= OnLoginBaseapp;
+			_client.Disconnected -= OnDisconnected;
+		}
+
 		base._ExitTree();
 	}
 
@@ -56,9 +66,8 @@ public partial class MainUi : Control
 		_loginButton.Disabled = false;
 	}
 
-	public void OnLoginFailed(ushort retCode, byte[] _serverData)
+	public void OnLoginFailed(string errorMessage)
 	{
-		var errorMessage = KBEngineApp.app != null ? KBEngineApp.app.serverErr(retCode) : $"retCode={retCode}";
 		_statusLabel.Text = $"Login failed: {errorMessage}";
 		_loginButton.Disabled = false;
 	}
@@ -90,7 +99,7 @@ public partial class MainUi : Control
 
 	private void _on_login_btn_button_up()
 	{
-		if (KBEngineApp.app == null)
+		if (_client == null || !_client.IsInitialized)
 		{
 			_statusLabel.Text = "KBEngine is not initialized yet.";
 			return;
@@ -124,7 +133,7 @@ public partial class MainUi : Control
 		var payload = JsonSerializer.SerializeToUtf8Bytes(loginData);
 		_statusLabel.Text = $"Logging in to {GameConfig.KbEngineHost}:{GameConfig.KbEnginePort}...";
 		_loginButton.Disabled = true;
-		KBEngineApp.app.login(account, password, payload);
+		_client.Login(account, password, payload);
 	}
 
 	private void _on_random_name_btn_button_up()

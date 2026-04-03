@@ -1,40 +1,92 @@
-# Godot Demo
+# Godot KBEngine Demo
 
-版本：Godot Engine v4.4.1.stable.mono
+Godot version: `4.4.1 mono`  
+KBEngine branch used by this client: `dev-2.6.x`
 
-引擎版本：[dev-2.6.x](https://github.com/KBEngineLab/KBEngine-Nex/tree/dev-2.6.x)
+This repository is a Godot client demo wired to a KBEngine-generated C# SDK.
 
-服务端：https://github.com/KBEngineLab/demo_kbengine_nex_assets
+## Source Of Truth
 
+`kbe_csharp_plugins/` is generated from the server protocol.
 
-# 当前整理结果
+Rules:
 
-项目现已按 `kbe_csharp_plugins/` 里的生成内容收敛。
+- Do not write business logic into `kbe_csharp_plugins/`.
+- Do not patch generated `*Base.cs`, `EntityDef.cs`, or engine helper files by hand.
+- When the server protocol changes, regenerate `kbe_csharp_plugins/` first, then adapt the handwritten layer.
 
-- 当前生成 SDK 只包含：`Player`、`GameMgr`、`Server`、`Space`、`WebServer`
-- 客户端主流程整理为：`autoload App -> Login UI -> Player -> World`
-- 旧的 `Account/Avatar/Monster/NPC/Gate/Test` 客户端脚本已移除，因为它们和当前生成 SDK 不匹配
-- 世界内保留的是 `Player` 表现层与基础移动/镜头能力
+## Layer Boundary
 
-# 当前支持
+Generated layer:
 
-- [x] 连接 KBEngine
-- [x] 登录
-- [x] 创建 Player 实体并进入世界
-- [x] 本地玩家移动
-- [x] 远端 Player 同步显示
-- [ ] Account/Avatar 选角链路
-- [ ] Monster/NPC/Gate 客户端实体
-- [ ] 死亡/复活
-- [ ] 攻击/攻击动画
+- `kbe_csharp_plugins/`
 
-# sdk 生成
+Handwritten KBEngine integration layer:
 
+- [App.cs](/d:/UGit/kbe_godot_demo/App.cs)
+- `Scripts/KBE/`
+
+Core handwritten world-entity primitives:
+
+- `IWorldEntityView`
+- `ILocallyControlledWorldEntity`
+- `IServerDrivenWorldEntity`
+- `IWorldEntityRenderHooks`
+- `WorldEntityRenderBinding<TEntity, TController>`
+- `WorldEntityControllerBase<TEntity>`
+
+Presentation and game-facing layer:
+
+- `UI/`
+- `Prefab/`
+- [World.cs](/d:/UGit/kbe_godot_demo/World.cs)
+- `Scripts/*.gd`
+- `common/`
+
+Only the handwritten KBEngine integration layer should reference:
+
+- `using KBEngine`
+- `KBEngineApp`
+- `KBEngine.Event`
+- generated entity/component base classes such as `PlayerBase`, `CombatBase`, `MotionBase`
+- generated protocol structs such as `KBVector3`
+
+`UI/`, `Prefab/`, and other presentation code should only talk to handwritten wrappers such as:
+
+- `App.Client`
+- `Player`
+- handwritten adapter methods and properties exposed from `Scripts/KBE/`
+
+## Current Client Flow
+
+`autoload App -> MainUi -> local Player -> World`
+
+Only the local controlled `Player` is allowed to trigger world bootstrap.
+Server-created entities such as `Monster` are spawned directly from world sync and do not participate in login flow.
+
+Current generated entities/modules in use:
+
+- `Player`
+- `Monster`
+- `GameMgr`
+- `Server`
+- `Space`
+- `WebServer`
+
+## Protocol Update Workflow
+
+1. Regenerate the client SDK into `kbe_csharp_plugins/`.
+2. Review generated changes in `PlayerBase`, component bases, and entity defs.
+3. Update handwritten adapters in `Scripts/KBE/`.
+4. Update UI or prefabs only through handwritten wrapper APIs.
+5. Build the main project and verify the client manually.
+
+## SDK Generation
+
+Example:
+
+```bat
 start "" "%KBE_BIN_PATH%/kbcmd.exe" --clientsdk=csharp --outpath="%~dp0/kbe_csharp_plugins"
+```
 
-将最新生成结果覆盖到 `/kbe_csharp_plugins`
-
-
-# 说明
-
-`kbe_csharp_plugins` 是这份工程的事实来源。每次服务端实体定义变化后，都应该先重新生成 SDK，再按生成出来的 `*Base.cs` 和 `EntityDef.cs` 调整手写层。
+After generation, replace the local `kbe_csharp_plugins/` directory contents with the newly generated files.

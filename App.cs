@@ -5,19 +5,32 @@ using KBEngine;
 
 public partial class App : GodotKBEMain
 {
+	public static App Instance { get; private set; }
+
 	private bool _isShuttingDown;
+
+	public KbeClient Client { get; private set; }
 
 	public override void _Ready()
 	{
+		Instance = this;
 		KBELog.Init(new GodotLogProvider());
 		ip = GameConfig.KbEngineHost;
 		port = GameConfig.KbEnginePort;
 		base._Ready();
+		Client = new KbeClient();
+		Client.Bind();
 	}
 
 	public override void _ExitTree()
 	{
 		ShutdownKbEngineGracefully();
+
+		if (ReferenceEquals(Instance, this))
+		{
+			Instance = null;
+		}
+
 		base._ExitTree();
 	}
 
@@ -30,6 +43,9 @@ public partial class App : GodotKBEMain
 
 		_isShuttingDown = true;
 		GD.Print("clientapp::OnDestroy(): begin");
+
+		Client?.Dispose();
+		Client = null;
 
 		if (KBEngineApp.app != null)
 		{

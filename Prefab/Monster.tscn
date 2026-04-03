@@ -1,0 +1,47 @@
+[gd_scene load_steps=7 format=3]
+
+[ext_resource type="Script" path="res://Prefab/MonsterController.cs" id="1_4t8k1"]
+[ext_resource type="Script" path="res://UI/head_info.gd" id="2_f8l2u"]
+
+[sub_resource type="CapsuleMesh" id="CapsuleMesh_b2c0u"]
+
+[sub_resource type="BoxMesh" id="BoxMesh_h4m9y"]
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_q1a2w"]
+albedo_color = Color(0.45098, 0.117647, 0.117647, 1)
+
+[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_r5k8v"]
+radius = 0.565877
+height = 1.96453
+
+[node name="Monster" type="Node3D"]
+script = ExtResource("1_4t8k1")
+
+[node name="MonsterCharacterBody3D" type="CharacterBody3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.837883, 0)
+
+[node name="MonsterModel" type="MeshInstance3D" parent="MonsterCharacterBody3D"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.010913, 0)
+mesh = SubResource("CapsuleMesh_b2c0u")
+skeleton = NodePath("../../..")
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="MonsterCharacterBody3D/MonsterModel"]
+transform = Transform3D(0.281644, 0, 0, 0, 0.281644, 0, 0, 0, 0.281644, 0, 0.388572, -0.520453)
+mesh = SubResource("BoxMesh_h4m9y")
+surface_material_override/0 = SubResource("StandardMaterial3D_q1a2w")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="MonsterCharacterBody3D"]
+shape = SubResource("CapsuleShape3D_r5k8v")
+
+[node name="HeadInfo" type="Node3D" parent="MonsterCharacterBody3D"]
+script = ExtResource("2_f8l2u")
+
+[node name="NameLabel" type="Label3D" parent="MonsterCharacterBody3D/HeadInfo"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.55309, 0)
+text = "Monster"
+font_size = 40
+
+[node name="HPLabel" type="Label3D" parent="MonsterCharacterBody3D/HeadInfo"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.24526, 0)
+text = "HP / MP"
+font_size = 40
