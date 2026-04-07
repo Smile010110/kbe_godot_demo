@@ -1,0 +1,47 @@
+[gd_scene load_steps=7 format=3 uid="uid://ckf2jk3cjrw14"]
+
+[ext_resource type="Script" uid="uid://bfoyip11br8tu" path="res://Prefab/NpcController.cs" id="1_w8q4m"]
+[ext_resource type="Script" uid="uid://d2r0g0arau8sj" path="res://UI/head_info.gd" id="2_1r5ku"]
+
+[sub_resource type="CapsuleMesh" id="CapsuleMesh_8xv5u"]
+
+[sub_resource type="BoxMesh" id="BoxMesh_9ln3t"]
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_0h7me"]
+albedo_color = Color(0.705882, 0.705882, 0.705882, 1)
+
+[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_2jw4a"]
+radius = 0.565877
+height = 1.96453
+
+[node name="Npc" type="Node3D"]
+script = ExtResource("1_w8q4m")
+
+[node name="NpcCharacterBody3D" type="CharacterBody3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.837883, 0)
+
+[node name="NpcModel" type="MeshInstance3D" parent="NpcCharacterBody3D"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.010913, 0)
+mesh = SubResource("CapsuleMesh_8xv5u")
+skeleton = NodePath("../../..")
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="NpcCharacterBody3D/NpcModel"]
+transform = Transform3D(0.281644, 0, 0, 0, 0.281644, 0, 0, 0, 0.281644, 0, 0.388572, -0.520453)
+mesh = SubResource("BoxMesh_9ln3t")
+surface_material_override/0 = SubResource("StandardMaterial3D_0h7me")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="NpcCharacterBody3D"]
+shape = SubResource("CapsuleShape3D_2jw4a")
+
+[node name="HeadInfo" type="Node3D" parent="NpcCharacterBody3D"]
+script = ExtResource("2_1r5ku")
+
+[node name="NameLabel" type="Label3D" parent="NpcCharacterBody3D/HeadInfo"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.55309, 0)
+text = "Npc"
+font_size = 40
+
+[node name="HPLabel" type="Label3D" parent="NpcCharacterBody3D/HeadInfo"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.24526, 0)
+visible = false
+font_size = 40

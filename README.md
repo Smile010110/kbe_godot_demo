@@ -32,6 +32,9 @@ Core handwritten world-entity primitives:
 - `ILocallyControlledWorldEntity`
 - `IServerDrivenWorldEntity`
 - `IWorldEntityRenderHooks`
+- `WorldEntityKind`
+- `WorldEntityNameplateStyleResolver`
+- `WorldEntitySceneRegistry`
 - `WorldEntityRenderBinding<TEntity, TController>`
 - `WorldEntityControllerBase<TEntity>`
 
@@ -63,11 +66,13 @@ Only the handwritten KBEngine integration layer should reference:
 
 Only the local controlled `Player` is allowed to trigger world bootstrap.
 Server-created entities such as `Monster` are spawned directly from world sync and do not participate in login flow.
+`Npc` follows the same server-driven path.
 
 Current generated entities/modules in use:
 
 - `Player`
 - `Monster`
+- `Npc`
 - `GameMgr`
 - `Server`
 - `Space`

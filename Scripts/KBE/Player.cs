@@ -7,11 +7,17 @@ public class Player : PlayerBase, ILocallyControlledWorldEntity, IWorldEntityRen
 	public static event Action OnLocalPlayerEnterWorldRequested;
 	public static Player LocalPlayer { get; private set; }
 
+	private const float PositionSyncEpsilonSquared = 0.0001f;
+	private const float RotationSyncEpsilonDegrees = 0.1f;
+
 	private readonly WorldEntityRenderBinding<Player, PlayerController> _renderBinding;
+	private Vector3 _lastSyncedWorldPosition;
+	private Vector3 _lastSyncedWorldRotationDegrees;
+	private bool _hasLastSyncedTransform;
 
 	public Player()
 	{
-		_renderBinding = new WorldEntityRenderBinding<Player, PlayerController>(this, this, "res://Prefab/Player.tscn");
+		_renderBinding = new WorldEntityRenderBinding<Player, PlayerController>(this, this);
 	}
 
 	public bool IsLocalPlayer => isPlayer();
@@ -20,15 +26,17 @@ public class Player : PlayerBase, ILocallyControlledWorldEntity, IWorldEntityRen
 	public ulong DatabaseId => dbid;
 	public ushort ServerId => server_id;
 	public uint SpaceUtype => space_utype;
+	public WorldEntityKind EntityKind => WorldEntityKind.Player;
+	public bool IsTeammate => false;
 	public string DisplayName => string.IsNullOrWhiteSpace(name) ? $"Player {id}" : name;
+	public string SecondaryInfoText => WorldEntityNameplateText.BuildCombatMotionLine(HitPoints, ManaPoints, RawMoveSpeed);
+	public bool ShowSecondaryInfo => true;
 	public ulong HitPoints => combat != null ? combat.hp : 0UL;
 	public ulong ManaPoints => combat != null ? combat.mp : 0UL;
 	public byte RawMoveSpeed => motion != null ? motion.moveSpeed : (byte)0;
 	public float MoveSpeedUnits => Mathf.Max(0.1f, RawMoveSpeed / 10.0f);
 	public Vector3 WorldPosition => new Vector3(position.x, position.y, position.z);
 	public Vector3 WorldRotationDegrees => new Vector3(direction.x, direction.y - 180.0f, direction.z);
-	public NameplateStyle NameplateStyle => ResolveNameplateStyle();
-	public Color NameplateColor => NameplatePalette.Resolve(NameplateStyle);
 
 	public override void __init__()
 	{
@@ -121,12 +129,21 @@ public class Player : PlayerBase, ILocallyControlledWorldEntity, IWorldEntityRen
 
 	public void ApplyLocalTransform(Vector3 worldPosition, Vector3 worldRotationDegrees)
 	{
+		if (!HasLocalTransformChanged(worldPosition, worldRotationDegrees))
+		{
+			return;
+		}
+
 		position = worldPosition;
 		direction = new KBVector3(
 			worldRotationDegrees.X,
 			worldRotationDegrees.Y + 180.0f,
 			worldRotationDegrees.Z
 		);
+
+		_lastSyncedWorldPosition = worldPosition;
+		_lastSyncedWorldRotationDegrees = worldRotationDegrees;
+		_hasLastSyncedTransform = true;
 	}
 
 	public void RefreshRenderInfo()
@@ -139,19 +156,30 @@ public class Player : PlayerBase, ILocallyControlledWorldEntity, IWorldEntityRen
 		_renderBinding.RefreshTransform();
 	}
 
-	private NameplateStyle ResolveNameplateStyle()
-	{
-		if (IsLocalPlayer)
-		{
-			return NameplateStyle.Self;
-		}
-
-		// Team relation is not exposed in the current generated protocol yet.
-		return NameplateStyle.Neutral;
-	}
-
 	private void OnWorldReady()
 	{
 		_renderBinding.HandleWorldReady();
+	}
+
+	private bool HasLocalTransformChanged(Vector3 worldPosition, Vector3 worldRotationDegrees)
+	{
+		if (!_hasLastSyncedTransform)
+		{
+			return true;
+		}
+
+		if (_lastSyncedWorldPosition.DistanceSquaredTo(worldPosition) > PositionSyncEpsilonSquared)
+		{
+			return true;
+		}
+
+		return HasRotationChanged(_lastSyncedWorldRotationDegrees, worldRotationDegrees);
+	}
+
+	private static bool HasRotationChanged(Vector3 previousRotation, Vector3 currentRotation)
+	{
+		return Mathf.Abs(Mathf.AngleDifference(previousRotation.X, currentRotation.X)) > RotationSyncEpsilonDegrees
+			|| Mathf.Abs(Mathf.AngleDifference(previousRotation.Y, currentRotation.Y)) > RotationSyncEpsilonDegrees
+			|| Mathf.Abs(Mathf.AngleDifference(previousRotation.Z, currentRotation.Z)) > RotationSyncEpsilonDegrees;
 	}
 }

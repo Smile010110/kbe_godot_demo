@@ -1,25 +1,25 @@
 using Godot;
 using KBEngine;
 
-public class Monster : MonsterBase, IServerDrivenWorldEntity, IWorldEntityRenderHooks
+public class Npc : NpcBase, IServerDrivenWorldEntity, IWorldEntityRenderHooks
 {
-	private readonly WorldEntityRenderBinding<Monster, MonsterController> _renderBinding;
+	private readonly WorldEntityRenderBinding<Npc, NpcController> _renderBinding;
 
-	public Monster()
+	public Npc()
 	{
-		_renderBinding = new WorldEntityRenderBinding<Monster, MonsterController>(this, this);
+		_renderBinding = new WorldEntityRenderBinding<Npc, NpcController>(this, this);
 	}
 
 	public bool IsLocallyControlled => false;
 	public int EntityId => id;
 	public ulong DatabaseId => dbid;
-	public WorldEntityKind EntityKind => WorldEntityKind.Monster;
+	public WorldEntityKind EntityKind => WorldEntityKind.Npc;
 	public bool IsTeammate => false;
-	public string DisplayName => string.IsNullOrWhiteSpace(name) ? $"Monster {id}" : name;
-	public string SecondaryInfoText => WorldEntityNameplateText.BuildCombatMotionLine(HitPoints, ManaPoints, RawMoveSpeed);
-	public bool ShowSecondaryInfo => true;
-	public ulong HitPoints => combat != null ? combat.hp : 0UL;
-	public ulong ManaPoints => combat != null ? combat.mp : 0UL;
+	public string DisplayName => string.IsNullOrWhiteSpace(name) ? $"Npc {id}" : name;
+	public string SecondaryInfoText => RawMoveSpeed > 0 ? WorldEntityNameplateText.BuildSpeedOnlyLine(RawMoveSpeed) : string.Empty;
+	public bool ShowSecondaryInfo => !string.IsNullOrWhiteSpace(SecondaryInfoText);
+	public ulong HitPoints => 0UL;
+	public ulong ManaPoints => 0UL;
 	public byte RawMoveSpeed => motion != null ? motion.moveSpeed : (byte)0;
 	public float MoveSpeedUnits => Mathf.Max(0.1f, RawMoveSpeed / 10.0f);
 	public Vector3 WorldPosition => new Vector3(position.x, position.y, position.z);

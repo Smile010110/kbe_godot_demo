@@ -8,10 +8,10 @@ public abstract partial class WorldEntityControllerBase<TEntity> : Node3D, IWorl
 
 	protected TEntity EntityView { get; private set; }
 	protected CharacterBody3D CharacterBody { get; private set; }
+	protected Label3D NameLabel { get; private set; }
+	protected Label3D InfoLabel { get; private set; }
 
 	private Vector3 _targetPosition;
-	private Label3D _nameLabel;
-	private Label3D _infoLabel;
 	private bool _isReady;
 	private bool _hasInitialTransform;
 
@@ -22,8 +22,8 @@ public abstract partial class WorldEntityControllerBase<TEntity> : Node3D, IWorl
 	public override void _Ready()
 	{
 		CharacterBody = GetNode<CharacterBody3D>(CharacterBodyPath);
-		_nameLabel = GetNode<Label3D>(NameLabelPath);
-		_infoLabel = GetNode<Label3D>(InfoLabelPath);
+		NameLabel = GetNode<Label3D>(NameLabelPath);
+		InfoLabel = GetNode<Label3D>(InfoLabelPath);
 		_targetPosition = CharacterBody.GlobalPosition;
 		_isReady = true;
 
@@ -62,15 +62,16 @@ public abstract partial class WorldEntityControllerBase<TEntity> : Node3D, IWorl
 
 	public virtual void SetHeadInfo()
 	{
-		if (EntityView == null || _nameLabel == null || _infoLabel == null)
+		if (EntityView == null || NameLabel == null || InfoLabel == null)
 		{
 			return;
 		}
 
 		MoveSpeed = GetMoveSpeed();
-		_nameLabel.Text = ResolveNameLabelText();
-		_nameLabel.Modulate = EntityView.NameplateColor;
-		_infoLabel.Text = $"HP {EntityView.HitPoints} | MP {EntityView.ManaPoints} | SPD {EntityView.RawMoveSpeed}";
+		NameLabel.Text = ResolveNameLabelText();
+		NameLabel.Modulate = WorldEntityNameplateStyleResolver.ResolveColor(EntityView);
+		InfoLabel.Text = EntityView.SecondaryInfoText;
+		InfoLabel.Visible = EntityView.ShowSecondaryInfo;
 	}
 
 	public virtual void UpdateFromEntity()
@@ -98,15 +99,27 @@ public abstract partial class WorldEntityControllerBase<TEntity> : Node3D, IWorl
 			return;
 		}
 
-		if (EntityView is ILocallyControlledWorldEntity localEntity)
+		if (EntityView.IsLocallyControlled)
 		{
-			localEntity.ApplyLocalTransform(CharacterBody.GlobalPosition, CharacterBody.GlobalRotationDegrees);
 			return;
 		}
 
 		var currentPosition = CharacterBody.GlobalTransform.Origin;
 		var nextPosition = currentPosition.MoveToward(_targetPosition, (float)(MoveSpeed * delta));
 		CharacterBody.GlobalTransform = new Transform3D(CharacterBody.GlobalTransform.Basis, nextPosition);
+	}
+
+	public override void _PhysicsProcess(double delta)
+	{
+		if (EntityView == null || CharacterBody == null)
+		{
+			return;
+		}
+
+		if (EntityView is ILocallyControlledWorldEntity localEntity)
+		{
+			localEntity.ApplyLocalTransform(CharacterBody.GlobalPosition, CharacterBody.GlobalRotationDegrees);
+		}
 	}
 
 	protected virtual string ResolveNameLabelText()

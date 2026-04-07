@@ -2,14 +2,17 @@ using Godot;
 
 public interface IWorldEntityView
 {
+	WorldEntityKind EntityKind { get; }
+	bool IsTeammate { get; }
 	string DisplayName { get; }
+	string SecondaryInfoText { get; }
+	bool ShowSecondaryInfo { get; }
 	ulong HitPoints { get; }
 	ulong ManaPoints { get; }
 	byte RawMoveSpeed { get; }
 	float MoveSpeedUnits { get; }
 	Vector3 WorldPosition { get; }
 	Vector3 WorldRotationDegrees { get; }
-	Color NameplateColor { get; }
 	bool IsLocallyControlled { get; }
 }
 

@@ -7,14 +7,12 @@ public sealed class WorldEntityRenderBinding<TEntity, TController>
 {
 	private readonly Entity _owner;
 	private readonly TEntity _entity;
-	private readonly string _scenePath;
 	private bool _waitingForWorld;
 
-	public WorldEntityRenderBinding(Entity owner, TEntity entity, string scenePath)
+	public WorldEntityRenderBinding(Entity owner, TEntity entity)
 	{
 		_owner = owner;
 		_entity = entity;
-		_scenePath = scenePath;
 	}
 
 	public void WaitForWorld()
@@ -49,7 +47,7 @@ public sealed class WorldEntityRenderBinding<TEntity, TController>
 			return;
 		}
 
-		var entityScene = GD.Load<PackedScene>(_scenePath);
+		var entityScene = WorldEntitySceneRegistry.GetPackedScene<TEntity>();
 		var entityNode = entityScene.Instantiate<TController>();
 		_owner.renderObj = entityNode;
 		World.Instance.AddChild(entityNode);

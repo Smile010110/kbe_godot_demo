@@ -17,9 +17,23 @@ public partial class App : GodotKBEMain
 		KBELog.Init(new GodotLogProvider());
 		ip = GameConfig.KbEngineHost;
 		port = GameConfig.KbEnginePort;
+		serverHeartbeatTick = GameConfig.ServerHeartbeatTick;
+		GetTree().AutoAcceptQuit = false;
 		base._Ready();
 		Client = new KbeClient();
 		Client.Bind();
+	}
+
+	public override void _Notification(int what)
+	{
+		if (what == NotificationWMCloseRequest)
+		{
+			ShutdownKbEngineGracefully();
+			GetTree().Quit();
+			return;
+		}
+
+		base._Notification(what);
 	}
 
 	public override void _ExitTree()
@@ -74,7 +88,7 @@ public partial class App : GodotKBEMain
 			return;
 		}
 
-		var deadline = DateTime.UtcNow.AddMilliseconds(250);
+		var deadline = DateTime.UtcNow.AddMilliseconds(500);
 		while (DateTime.UtcNow < deadline)
 		{
 			if (!isMultiThreads)

@@ -1,7 +1,7 @@
-[gd_scene load_steps=7 format=3]
+[gd_scene load_steps=7 format=3 uid="uid://dyvoyvs0qdx50"]
 
-[ext_resource type="Script" path="res://Prefab/MonsterController.cs" id="1_4t8k1"]
-[ext_resource type="Script" path="res://UI/head_info.gd" id="2_f8l2u"]
+[ext_resource type="Script" uid="uid://fqewso4qei0f" path="res://Prefab/MonsterController.cs" id="1_4t8k1"]
+[ext_resource type="Script" uid="uid://d2r0g0arau8sj" path="res://UI/head_info.gd" id="2_f8l2u"]
 
 [sub_resource type="CapsuleMesh" id="CapsuleMesh_b2c0u"]
 
