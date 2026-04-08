@@ -25,6 +25,7 @@ public class Player : PlayerBase, ILocallyControlledWorldEntity, IWorldEntityRen
 	public int EntityId => id;
 	public ulong DatabaseId => dbid;
 	public ushort ServerId => server_id;
+	public byte SpaceLine => space_line;
 	public uint SpaceUtype => space_utype;
 	public WorldEntityKind EntityKind => WorldEntityKind.Player;
 	public bool IsTeammate => false;
@@ -36,7 +37,8 @@ public class Player : PlayerBase, ILocallyControlledWorldEntity, IWorldEntityRen
 	public byte RawMoveSpeed => motion != null ? motion.moveSpeed : (byte)0;
 	public float MoveSpeedUnits => Mathf.Max(0.1f, RawMoveSpeed / 10.0f);
 	public Vector3 WorldPosition => new Vector3(position.x, position.y, position.z);
-	public Vector3 WorldRotationDegrees => new Vector3(direction.x, direction.y - 180.0f, direction.z);
+	public Vector3 WorldRotationDegrees => WorldEntityRotationMapping.ToGodotRotationDegrees(direction);
+	public bool UsePlanarRotation => true;
 
 	public override void __init__()
 	{
@@ -102,6 +104,11 @@ public class Player : PlayerBase, ILocallyControlledWorldEntity, IWorldEntityRen
 		RefreshRenderInfo();
 	}
 
+	public override void onSpace_lineChanged(byte oldValue)
+	{
+		RefreshRenderInfo();
+	}
+
 	public override void onNameChanged(string oldValue)
 	{
 		RefreshRenderInfo();
@@ -127,6 +134,16 @@ public class Player : PlayerBase, ILocallyControlledWorldEntity, IWorldEntityRen
 		}
 	}
 
+	public override void onSmoothPositionChanged(KBVector3 oldValue)
+	{
+		base.onSmoothPositionChanged(oldValue);
+
+		if (!IsLocalPlayer)
+		{
+			RefreshRenderTransform();
+		}
+	}
+
 	public void ApplyLocalTransform(Vector3 worldPosition, Vector3 worldRotationDegrees)
 	{
 		if (!HasLocalTransformChanged(worldPosition, worldRotationDegrees))
@@ -135,11 +152,7 @@ public class Player : PlayerBase, ILocallyControlledWorldEntity, IWorldEntityRen
 		}
 
 		position = worldPosition;
-		direction = new KBVector3(
-			worldRotationDegrees.X,
-			worldRotationDegrees.Y + 180.0f,
-			worldRotationDegrees.Z
-		);
+		direction = WorldEntityRotationMapping.ToKbeDirection(worldRotationDegrees);
 
 		_lastSyncedWorldPosition = worldPosition;
 		_lastSyncedWorldRotationDegrees = worldRotationDegrees;

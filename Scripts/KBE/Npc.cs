@@ -23,7 +23,8 @@ public class Npc : NpcBase, IServerDrivenWorldEntity, IWorldEntityRenderHooks
 	public byte RawMoveSpeed => motion != null ? motion.moveSpeed : (byte)0;
 	public float MoveSpeedUnits => Mathf.Max(0.1f, RawMoveSpeed / 10.0f);
 	public Vector3 WorldPosition => new Vector3(position.x, position.y, position.z);
-	public Vector3 WorldRotationDegrees => new Vector3(direction.x, direction.y - 180.0f, direction.z);
+	public Vector3 WorldRotationDegrees => WorldEntityRotationMapping.ToGodotRotationDegrees(direction);
+	public bool UsePlanarRotation => true;
 
 	public override void __init__()
 	{
@@ -71,6 +72,12 @@ public class Npc : NpcBase, IServerDrivenWorldEntity, IWorldEntityRenderHooks
 	public override void onPositionChanged(KBVector3 oldValue)
 	{
 		base.onPositionChanged(oldValue);
+		RefreshRenderTransform();
+	}
+
+	public override void onSmoothPositionChanged(KBVector3 oldValue)
+	{
+		base.onSmoothPositionChanged(oldValue);
 		RefreshRenderTransform();
 	}
 

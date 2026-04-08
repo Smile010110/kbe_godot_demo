@@ -15,6 +15,7 @@ public partial class WorldUi : Control
 		var entityId = player != null ? player.EntityId.ToString() : "-";
 		var dbid = player != null ? player.DatabaseId.ToString() : "-";
 		var serverId = player != null ? player.ServerId.ToString() : "-";
+		var spaceLine = player != null ? player.SpaceLine.ToString() : "-";
 		var spaceUtype = player != null ? player.SpaceUtype.ToString() : "-";
 		var moveSpeed = player != null ? player.RawMoveSpeed.ToString() : "-";
 		var hp = player != null ? player.HitPoints.ToString() : "-";
@@ -24,6 +25,6 @@ public partial class WorldUi : Control
 			? $"({position.X:0.00}, {position.Y:0.00}, {position.Z:0.00})"
 			: "-";
 
-		_infoLabel.Text = $"WASD move\nSpace jump\nHold RMB to rotate camera\nEntity: {entityId}\nDBID: {dbid}\nServer: {serverId}\nSpaceUType: {spaceUtype}\nPosition: {positionText}\nMoveSpeed: {moveSpeed}\nHP: {hp}\nMP: {mp}";
+		_infoLabel.Text = $"WASD move\nSpace jump\nHold RMB to rotate camera\nEntity: {entityId}\nDBID: {dbid}\nServer: {serverId}\nSpaceUType: {spaceUtype}\nSpaceLine: {spaceLine}\nPosition: {positionText}\nMoveSpeed: {moveSpeed}\nHP: {hp}\nMP: {mp}";
 	}
 }

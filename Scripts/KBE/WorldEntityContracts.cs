@@ -13,6 +13,7 @@ public interface IWorldEntityView
 	float MoveSpeedUnits { get; }
 	Vector3 WorldPosition { get; }
 	Vector3 WorldRotationDegrees { get; }
+	bool UsePlanarRotation { get; }
 	bool IsLocallyControlled { get; }
 }
 
