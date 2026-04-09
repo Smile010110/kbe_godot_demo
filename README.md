@@ -53,6 +53,10 @@ Presentation and game-facing layer:
 - `Scripts/*.gd`
 - `common/`
 
+Client data tables:
+
+- `common/Data/`
+
 Runtime tuning that should stay in the handwritten layer:
 
 - `GameConfig`

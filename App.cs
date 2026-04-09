@@ -1,6 +1,7 @@
 using Godot;
 using System;
 using System.Threading;
+using CommonData;
 using KBEngine;
 
 public partial class App : GodotKBEMain
@@ -18,6 +19,7 @@ public partial class App : GodotKBEMain
 	public override void _Ready()
 	{
 		Instance = this;
+		AvatarInitConfigRepository.Warmup();
 		KBELog.Init(new GodotLogProvider());
 		ip = GameConfig.KbEngineHost;
 		port = GameConfig.KbEnginePort;
