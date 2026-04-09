@@ -56,6 +56,7 @@ Presentation and game-facing layer:
 Client data tables:
 
 - `common/Data/`
+- `common/DataTables/`
 
 Runtime tuning that should stay in the handwritten layer:
 
