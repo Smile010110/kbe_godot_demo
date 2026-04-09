@@ -9,15 +9,26 @@ public class Player : PlayerBase, ILocallyControlledWorldEntity, IWorldEntityRen
 
 	private const float PositionSyncEpsilonSquared = 0.0001f;
 	private const float RotationSyncEpsilonDegrees = 0.1f;
+	private const ulong MillisecondsThreshold = 1_000_000_000_000UL;
 
 	private readonly WorldEntityRenderBinding<Player, PlayerController> _renderBinding;
 	private Vector3 _lastSyncedWorldPosition;
 	private Vector3 _lastSyncedWorldRotationDegrees;
 	private bool _hasLastSyncedTransform;
+	private ulong _serverTimeAnchorValue;
+	private long _serverTimeAnchorClientTickMs;
+	private bool _serverTimeUsesMilliseconds;
+	private bool _hasServerTimeAnchor;
 
 	public Player()
 	{
 		_renderBinding = new WorldEntityRenderBinding<Player, PlayerController>(this, this);
+	}
+
+	public static void ResetStaticState()
+	{
+		LocalPlayer = null;
+		OnLocalPlayerEnterWorldRequested = null;
 	}
 
 	public bool IsLocalPlayer => isPlayer();
@@ -25,6 +36,8 @@ public class Player : PlayerBase, ILocallyControlledWorldEntity, IWorldEntityRen
 	public int EntityId => id;
 	public ulong DatabaseId => dbid;
 	public ushort ServerId => server_id;
+	public ulong ServerTime => GetCurrentServerTime();
+	public string ServerTimeText => FormatServerTime(ServerTime);
 	public byte SpaceLine => space_line;
 	public uint SpaceUtype => space_utype;
 	public WorldEntityKind EntityKind => WorldEntityKind.Player;
@@ -43,8 +56,8 @@ public class Player : PlayerBase, ILocallyControlledWorldEntity, IWorldEntityRen
 	public override void __init__()
 	{
 		base.__init__();
-		World.OnWorldReady -= OnWorldReady;
-		World.OnWorldReady += OnWorldReady;
+		SyncServerTimeAnchor(server_time);
+		_renderBinding.Initialize();
 	}
 
 	public override void onEnterWorld()
@@ -58,17 +71,11 @@ public class Player : PlayerBase, ILocallyControlledWorldEntity, IWorldEntityRen
 
 		if (World.Instance == null)
 		{
-			_renderBinding.WaitForWorld();
-
-			if (IsLocalPlayer)
-			{
-				OnLocalPlayerEnterWorldRequested?.Invoke();
-			}
-
+			_renderBinding.EnterWorld(IsLocalPlayer ? NotifyLocalPlayerEnterWorldRequested : null);
 			return;
 		}
 
-		_renderBinding.CreateOrBindRenderObject();
+		_renderBinding.EnterWorld();
 	}
 
 	public override void onLeaveWorld()
@@ -84,8 +91,12 @@ public class Player : PlayerBase, ILocallyControlledWorldEntity, IWorldEntityRen
 
 	public override void onDestroy()
 	{
-		World.OnWorldReady -= OnWorldReady;
-		_renderBinding.Cleanup();
+		if (ReferenceEquals(LocalPlayer, this))
+		{
+			LocalPlayer = null;
+		}
+
+		_renderBinding.Destroy();
 		base.onDestroy();
 	}
 
@@ -96,6 +107,12 @@ public class Player : PlayerBase, ILocallyControlledWorldEntity, IWorldEntityRen
 
 	public override void onServer_idChanged(ushort oldValue)
 	{
+		RefreshRenderInfo();
+	}
+
+	public override void onServer_timeChanged(ulong oldValue)
+	{
+		SyncServerTimeAnchor(server_time);
 		RefreshRenderInfo();
 	}
 
@@ -169,11 +186,6 @@ public class Player : PlayerBase, ILocallyControlledWorldEntity, IWorldEntityRen
 		_renderBinding.RefreshTransform();
 	}
 
-	private void OnWorldReady()
-	{
-		_renderBinding.HandleWorldReady();
-	}
-
 	private bool HasLocalTransformChanged(Vector3 worldPosition, Vector3 worldRotationDegrees)
 	{
 		if (!_hasLastSyncedTransform)
@@ -194,5 +206,72 @@ public class Player : PlayerBase, ILocallyControlledWorldEntity, IWorldEntityRen
 		return Mathf.Abs(Mathf.AngleDifference(previousRotation.X, currentRotation.X)) > RotationSyncEpsilonDegrees
 			|| Mathf.Abs(Mathf.AngleDifference(previousRotation.Y, currentRotation.Y)) > RotationSyncEpsilonDegrees
 			|| Mathf.Abs(Mathf.AngleDifference(previousRotation.Z, currentRotation.Z)) > RotationSyncEpsilonDegrees;
+	}
+
+	private static void NotifyLocalPlayerEnterWorldRequested()
+	{
+		OnLocalPlayerEnterWorldRequested?.Invoke();
+	}
+
+	private ulong GetCurrentServerTime()
+	{
+		SyncServerTimeAnchor(server_time);
+		if (!_hasServerTimeAnchor)
+		{
+			return 0UL;
+		}
+
+		var elapsedClientMs = Math.Max(0L, System.Environment.TickCount64 - _serverTimeAnchorClientTickMs);
+		var elapsedSeconds = (ulong)(elapsedClientMs / 1000L);
+		if (elapsedSeconds == 0UL)
+		{
+			return _serverTimeAnchorValue;
+		}
+
+		var tickStep = _serverTimeUsesMilliseconds ? 1000UL : 1UL;
+		return _serverTimeAnchorValue + elapsedSeconds * tickStep;
+	}
+
+	private void SyncServerTimeAnchor(ulong rawServerTime)
+	{
+		if (rawServerTime == 0UL)
+		{
+			return;
+		}
+
+		if (_hasServerTimeAnchor && _serverTimeAnchorValue == rawServerTime)
+		{
+			return;
+		}
+
+		_serverTimeAnchorValue = rawServerTime;
+		_serverTimeAnchorClientTickMs = System.Environment.TickCount64;
+		_serverTimeUsesMilliseconds = rawServerTime >= MillisecondsThreshold;
+		_hasServerTimeAnchor = true;
+	}
+
+	private static string FormatServerTime(ulong rawServerTime)
+	{
+		if (rawServerTime == 0)
+		{
+			return "-";
+		}
+
+		if (rawServerTime > long.MaxValue)
+		{
+			return rawServerTime.ToString();
+		}
+
+		try
+		{
+			var serverTime = rawServerTime >= MillisecondsThreshold
+				? DateTimeOffset.FromUnixTimeMilliseconds((long)rawServerTime)
+				: DateTimeOffset.FromUnixTimeSeconds((long)rawServerTime);
+			return serverTime.LocalDateTime.ToString("yyyy-MM-dd HH-mm-ss");
+		}
+		catch (ArgumentOutOfRangeException)
+		{
+			return rawServerTime.ToString();
+		}
 	}
 }

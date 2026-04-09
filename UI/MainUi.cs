@@ -16,9 +16,11 @@ public partial class MainUi : Control
 	private LineEdit _passwordEdit;
 	private LineEdit _nameEdit;
 	private CheckBox _rememberLoginCheckBox;
+	private Button _randomNameButton;
 	private Button _loginButton;
 	private Label _statusLabel;
 	private KbeClient _client;
+	private bool _isLoginInFlight;
 
 	public override void _Ready()
 	{
@@ -27,12 +29,16 @@ public partial class MainUi : Control
 		_passwordEdit = GetNode<LineEdit>("CenterContainer/Panel/VBox/PasswordEdit");
 		_nameEdit = GetNode<LineEdit>("CenterContainer/Panel/VBox/NameRow/NameEdit");
 		_rememberLoginCheckBox = GetNode<CheckBox>("CenterContainer/Panel/VBox/RememberLoginCheckBox");
+		_randomNameButton = GetNode<Button>("CenterContainer/Panel/VBox/NameRow/RandomNameBtn");
 		_loginButton = GetNode<Button>("CenterContainer/Panel/VBox/LoginBtn");
 		_statusLabel = GetNode<Label>("CenterContainer/Panel/VBox/StatusLabel");
 		_client = App.Instance?.Client;
-
-		_statusLabel.Text = $"Ready to connect to {GameConfig.KbEngineHost}:{GameConfig.KbEnginePort}";
 		LoadRememberedLogin();
+		var pendingStatusMessage = App.Instance?.ConsumePendingStatusMessage();
+		_statusLabel.Text = string.IsNullOrWhiteSpace(pendingStatusMessage)
+			? $"Ready to connect to {GameConfig.KbEngineHost}:{GameConfig.KbEnginePort}"
+			: pendingStatusMessage;
+		SetLoginUiBusy(false);
 
 		Player.OnLocalPlayerEnterWorldRequested += OnPlayerEnterWorldRequested;
 
@@ -57,19 +63,32 @@ public partial class MainUi : Control
 			_client.Disconnected -= OnDisconnected;
 		}
 
+		if (ReferenceEquals(Instance, this))
+		{
+			Instance = null;
+		}
+
 		base._ExitTree();
+	}
+
+	public static void ResetStaticState()
+	{
+		Instance = null;
 	}
 
 	public void OnConnectionState(bool success)
 	{
 		_statusLabel.Text = success ? "Connected to loginapp, waiting for baseapp..." : "Connection failed.";
-		_loginButton.Disabled = false;
+		if (!success)
+		{
+			SetLoginUiBusy(false);
+		}
 	}
 
 	public void OnLoginFailed(string errorMessage)
 	{
 		_statusLabel.Text = $"Login failed: {errorMessage}";
-		_loginButton.Disabled = false;
+		SetLoginUiBusy(false);
 	}
 
 	public void OnLoginBaseapp()
@@ -80,7 +99,7 @@ public partial class MainUi : Control
 	public void OnDisconnected()
 	{
 		_statusLabel.Text = "Disconnected from server.";
-		_loginButton.Disabled = false;
+		SetLoginUiBusy(false);
 	}
 
 	private void OnPlayerEnterWorldRequested()
@@ -99,6 +118,11 @@ public partial class MainUi : Control
 
 	private void _on_login_btn_button_up()
 	{
+		if (_isLoginInFlight)
+		{
+			return;
+		}
+
 		if (_client == null || !_client.IsInitialized)
 		{
 			_statusLabel.Text = "KBEngine is not initialized yet.";
@@ -132,8 +156,16 @@ public partial class MainUi : Control
 
 		var payload = JsonSerializer.SerializeToUtf8Bytes(loginData);
 		_statusLabel.Text = $"Logging in to {GameConfig.KbEngineHost}:{GameConfig.KbEnginePort}...";
-		_loginButton.Disabled = true;
-		_client.Login(account, password, payload);
+		SetLoginUiBusy(true);
+		try
+		{
+			_client.Login(account, password, payload);
+		}
+		catch (Exception e)
+		{
+			SetLoginUiBusy(false);
+			_statusLabel.Text = $"Login start failed: {e.Message}";
+		}
 	}
 
 	private void _on_random_name_btn_button_up()
@@ -195,5 +227,16 @@ public partial class MainUi : Control
 		var suffix = NicknameSuffixes[Random.Shared.Next(NicknameSuffixes.Length)];
 		var number = Random.Shared.Next(100, 999);
 		return $"{prefix}{suffix}{number}";
+	}
+
+	private void SetLoginUiBusy(bool isBusy)
+	{
+		_isLoginInFlight = isBusy;
+		_userNameEdit.Editable = !isBusy;
+		_passwordEdit.Editable = !isBusy;
+		_nameEdit.Editable = !isBusy;
+		_rememberLoginCheckBox.Disabled = isBusy;
+		_randomNameButton.Disabled = isBusy;
+		_loginButton.Disabled = isBusy;
 	}
 }

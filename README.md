@@ -38,6 +38,13 @@ Core handwritten world-entity primitives:
 - `WorldEntityRenderBinding<TEntity, TController>`
 - `WorldEntityControllerBase<TEntity>`
 
+`WorldEntityRenderBinding<TEntity, TController>` owns the handwritten world-facing entity lifecycle:
+
+- subscribe to `World.OnWorldReady`
+- wait for world bootstrap when scenes switch
+- create or bind the presentation node
+- clean up render nodes on leave/destroy
+
 Presentation and game-facing layer:
 
 - `UI/`
@@ -45,6 +52,13 @@ Presentation and game-facing layer:
 - [World.cs](/d:/UGit/kbe_godot_demo/World.cs)
 - `Scripts/*.gd`
 - `common/`
+
+Runtime tuning that should stay in the handwritten layer:
+
+- `GameConfig`
+- `ClientNetworkConfig`
+- `RemoteEntitySyncConfig`
+- `RemotePlayerSyncConfig`
 
 Only the handwritten KBEngine integration layer should reference:
 

@@ -8,6 +8,10 @@ public abstract partial class WorldEntityControllerBase<TEntity> : Node3D, IWorl
 	[Export]
 	public float RemoteInterpolationSeconds = 0.1f;
 	[Export]
+	public float RemoteMinInterpolationSeconds = 0.03f;
+	[Export]
+	public float RemoteMaxInterpolationSeconds = 0.2f;
+	[Export]
 	public float RemoteSnapDistance = 1.5f;
 
 	protected TEntity EntityView { get; private set; }
@@ -28,6 +32,7 @@ public abstract partial class WorldEntityControllerBase<TEntity> : Node3D, IWorl
 
 	public override void _Ready()
 	{
+		ApplyControllerConfigDefaults();
 		CharacterBody = GetNode<CharacterBody3D>(CharacterBodyPath);
 		NameLabel = GetNode<Label3D>(NameLabelPath);
 		InfoLabel = GetNode<Label3D>(InfoLabelPath);
@@ -94,7 +99,7 @@ public abstract partial class WorldEntityControllerBase<TEntity> : Node3D, IWorl
 		CharacterBody.GlobalRotationDegrees = ResolveAppliedRotationDegrees();
 		RecordTargetUpdate();
 
-		if (EntityView.IsLocallyControlled || !_hasInitialTransform || distanceToTarget >= RemoteSnapDistance)
+		if (EntityView.IsLocallyControlled || !_hasInitialTransform || distanceToTarget >= GetRemoteSnapDistance())
 		{
 			CharacterBody.GlobalPosition = entityPosition;
 			_hasInitialTransform = true;
@@ -160,6 +165,26 @@ public abstract partial class WorldEntityControllerBase<TEntity> : Node3D, IWorl
 		return EntityView is IServerDrivenWorldEntity && EntityView.UsePlanarRotation;
 	}
 
+	protected virtual float GetRemoteSnapDistance()
+	{
+		return RemoteSnapDistance;
+	}
+
+	protected virtual float GetDefaultRemoteInterpolationSeconds()
+	{
+		return RemoteInterpolationSeconds;
+	}
+
+	protected virtual float GetMinRemoteInterpolationSeconds()
+	{
+		return RemoteMinInterpolationSeconds;
+	}
+
+	protected virtual float GetMaxRemoteInterpolationSeconds()
+	{
+		return RemoteMaxInterpolationSeconds;
+	}
+
 	protected virtual void ApplyMovementFacing(Vector3 currentPosition)
 	{
 		if (!ShouldUseMovementFacing() || CharacterBody == null)
@@ -183,12 +208,16 @@ public abstract partial class WorldEntityControllerBase<TEntity> : Node3D, IWorl
 		var nowMs = Time.GetTicksMsec();
 		if (_lastTargetUpdateTimeMs == 0)
 		{
-			_targetInterpolationSeconds = RemoteInterpolationSeconds;
+			_targetInterpolationSeconds = GetDefaultRemoteInterpolationSeconds();
 		}
 		else
 		{
 			var elapsedSeconds = (nowMs - _lastTargetUpdateTimeMs) / 1000.0f;
-			_targetInterpolationSeconds = Mathf.Clamp(elapsedSeconds, 0.03f, 0.2f);
+			_targetInterpolationSeconds = Mathf.Clamp(
+				elapsedSeconds,
+				GetMinRemoteInterpolationSeconds(),
+				GetMaxRemoteInterpolationSeconds()
+			);
 		}
 
 		_lastTargetUpdateTimeMs = nowMs;
@@ -203,6 +232,14 @@ public abstract partial class WorldEntityControllerBase<TEntity> : Node3D, IWorl
 
 	protected virtual void OnCommonNodesReady()
 	{
+	}
+
+	protected virtual void ApplyControllerConfigDefaults()
+	{
+		RemoteInterpolationSeconds = RemoteEntitySyncConfig.DefaultInterpolationSeconds;
+		RemoteMinInterpolationSeconds = RemoteEntitySyncConfig.MinInterpolationSeconds;
+		RemoteMaxInterpolationSeconds = RemoteEntitySyncConfig.MaxInterpolationSeconds;
+		RemoteSnapDistance = RemoteEntitySyncConfig.SnapDistance;
 	}
 
 	protected virtual void UpdateControllerState()

@@ -29,21 +29,13 @@ public class Monster : MonsterBase, IServerDrivenWorldEntity, IWorldEntityRender
 	public override void __init__()
 	{
 		base.__init__();
-		World.OnWorldReady -= OnWorldReady;
-		World.OnWorldReady += OnWorldReady;
+		_renderBinding.Initialize();
 	}
 
 	public override void onEnterWorld()
 	{
 		base.onEnterWorld();
-
-		if (World.Instance == null)
-		{
-			_renderBinding.WaitForWorld();
-			return;
-		}
-
-		_renderBinding.CreateOrBindRenderObject();
+		_renderBinding.EnterWorld();
 	}
 
 	public override void onLeaveWorld()
@@ -54,8 +46,7 @@ public class Monster : MonsterBase, IServerDrivenWorldEntity, IWorldEntityRender
 
 	public override void onDestroy()
 	{
-		World.OnWorldReady -= OnWorldReady;
-		_renderBinding.Cleanup();
+		_renderBinding.Destroy();
 		base.onDestroy();
 	}
 
@@ -95,10 +86,5 @@ public class Monster : MonsterBase, IServerDrivenWorldEntity, IWorldEntityRender
 	public void RefreshRenderTransform()
 	{
 		_renderBinding.RefreshTransform();
-	}
-
-	private void OnWorldReady()
-	{
-		_renderBinding.HandleWorldReady();
 	}
 }

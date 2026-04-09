@@ -5,9 +5,13 @@ using KBEngine;
 
 public partial class App : GodotKBEMain
 {
+	private const string StartScenePath = "res://Start.tscn";
+
 	public static App Instance { get; private set; }
 
 	private bool _isShuttingDown;
+	private bool _isRecoveringFromDisconnect;
+	private string _pendingStatusMessage = string.Empty;
 
 	public KbeClient Client { get; private set; }
 
@@ -17,11 +21,13 @@ public partial class App : GodotKBEMain
 		KBELog.Init(new GodotLogProvider());
 		ip = GameConfig.KbEngineHost;
 		port = GameConfig.KbEnginePort;
+		syncPlayerMS = ClientNetworkConfig.PlayerSyncIntervalMs;
 		serverHeartbeatTick = GameConfig.ServerHeartbeatTick;
 		GetTree().AutoAcceptQuit = false;
 		base._Ready();
 		Client = new KbeClient();
 		Client.Bind();
+		Client.Disconnected += OnClientDisconnected;
 	}
 
 	public override void _Notification(int what)
@@ -58,8 +64,14 @@ public partial class App : GodotKBEMain
 		_isShuttingDown = true;
 		GD.Print("clientapp::OnDestroy(): begin");
 
+		if (Client != null)
+		{
+			Client.Disconnected -= OnClientDisconnected;
+		}
+
 		Client?.Dispose();
 		Client = null;
+		ClientRuntimeState.ResetForSceneTransition();
 
 		if (KBEngineApp.app != null)
 		{
@@ -81,6 +93,13 @@ public partial class App : GodotKBEMain
 		GD.Print("clientapp::OnDestroy(): end");
 	}
 
+	public string ConsumePendingStatusMessage()
+	{
+		var message = _pendingStatusMessage;
+		_pendingStatusMessage = string.Empty;
+		return message;
+	}
+
 	private void FlushPendingNetwork()
 	{
 		if (KBEngineApp.app?.networkInterface() == null || !KBEngineApp.app.networkInterface().valid())
@@ -99,5 +118,32 @@ public partial class App : GodotKBEMain
 			KBEngine.Event.processOutEvents();
 			Thread.Sleep(15);
 		}
+	}
+
+	private void OnClientDisconnected()
+	{
+		if (_isShuttingDown || _isRecoveringFromDisconnect)
+		{
+			return;
+		}
+
+		_isRecoveringFromDisconnect = true;
+		_pendingStatusMessage = "Disconnected from server. The server may have restarted. Please log in again.";
+		CallDeferred(nameof(RecoverFromUnexpectedDisconnect));
+	}
+
+	private void RecoverFromUnexpectedDisconnect()
+	{
+		if (_isShuttingDown)
+		{
+			return;
+		}
+
+		GD.Print("clientapp::RecoverFromUnexpectedDisconnect(): begin");
+		ClientRuntimeState.ResetForSceneTransition();
+		gameapp?.reset();
+		GetTree().ChangeSceneToFile(StartScenePath);
+		_isRecoveringFromDisconnect = false;
+		GD.Print("clientapp::RecoverFromUnexpectedDisconnect(): end");
 	}
 }

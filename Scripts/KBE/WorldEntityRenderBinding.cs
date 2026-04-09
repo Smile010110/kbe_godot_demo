@@ -1,3 +1,4 @@
+using System;
 using Godot;
 using KBEngine;
 
@@ -13,6 +14,24 @@ public sealed class WorldEntityRenderBinding<TEntity, TController>
 	{
 		_owner = owner;
 		_entity = entity;
+	}
+
+	public void Initialize()
+	{
+		World.OnWorldReady -= HandleWorldReady;
+		World.OnWorldReady += HandleWorldReady;
+	}
+
+	public void EnterWorld(Action onWaitingForWorld = null)
+	{
+		if (World.Instance == null)
+		{
+			WaitForWorld();
+			onWaitingForWorld?.Invoke();
+			return;
+		}
+
+		CreateOrBindRenderObject();
 	}
 
 	public void WaitForWorld()
@@ -79,5 +98,11 @@ public sealed class WorldEntityRenderBinding<TEntity, TController>
 
 		_owner.renderObj = null;
 		_waitingForWorld = false;
+	}
+
+	public void Destroy()
+	{
+		World.OnWorldReady -= HandleWorldReady;
+		Cleanup();
 	}
 }
