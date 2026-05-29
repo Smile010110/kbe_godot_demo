@@ -74,7 +74,7 @@ public partial class PlayerCharacterBody3D : CharacterBody3D
 
 		if (Input.IsActionJustPressed("attack"))
 		{
-			playerController.TrySelectTarget();
+			playerController.TryAttack();
 		}
 
 		MoveAndSlide();

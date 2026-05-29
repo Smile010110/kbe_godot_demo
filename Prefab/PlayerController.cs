@@ -29,10 +29,10 @@ public partial class PlayerController : WorldEntityControllerBase<Player>
 	private const string RuntimeAnimationLibraryName = "player_runtime";
 	private const float AnimationMoveEpsilon = 0.05f;
 	private const float DirectionSelectionThreshold = 0.35f;
+	private const float SelectionRayLength = 1000.0f;
+	private const float SelectionRingYOffset = 0.08f;
 
 	private static readonly Dictionary<uint, PlayerAnimationRuntimeSet> s_sharedAnimationRuntimeSets = new();
-
-	// 仅在 Godot 主线程访问，单线程模式（isMultiThreads=false）下安全。
 
 	[Export]
 	public float RemotePlayerInterpolationSeconds = 0.06f;
@@ -90,8 +90,15 @@ public partial class PlayerController : WorldEntityControllerBase<Player>
 		base._ExitTree();
 	}
 
-	public void TrySelectTarget()
+	public override void _Input(InputEvent @event)
 	{
+		if (@event is InputEventMouseButton mouseBtn
+			&& mouseBtn.ButtonIndex == MouseButton.Left
+			&& mouseBtn.Pressed)
+		{
+			GD.Print($"[TargetSelect] RAW LEFT CLICK — Player={Player != null} IsLocal={Player?.IsLocalPlayer} Camera={_camera != null} InTree={IsInsideTree()}");
+		}
+
 		if (Player == null || !Player.IsLocalPlayer)
 		{
 			return;
@@ -102,20 +109,28 @@ public partial class PlayerController : WorldEntityControllerBase<Player>
 			return;
 		}
 
-		var monsterController = FindMonsterUnderCrosshair();
-		if (monsterController == null)
+		if (@event is InputEventMouseButton mouseButton
+			&& mouseButton.ButtonIndex == MouseButton.Left
+			&& mouseButton.Pressed)
 		{
+			GD.Print($"[TargetSelect] Guards passed, searching at {mouseButton.Position}...");
+			var monsterController = FindMonsterAtScreenPosition(mouseButton.Position);
+			if (monsterController == null)
+			{
+				GD.Print("[TargetSelect] No monster found, clearing selection.");
+				ClearSelection();
+				return;
+			}
+
+			if (ReferenceEquals(monsterController, SelectedTarget))
+			{
+				GD.Print("[TargetSelect] Same target already selected.");
+				return;
+			}
+
 			ClearSelection();
-			return;
+			SelectTarget(monsterController);
 		}
-
-		if (ReferenceEquals(monsterController, SelectedTarget))
-		{
-			return;
-		}
-
-		ClearSelection();
-		SelectTarget(monsterController);
 	}
 
 	private void SelectTarget(MonsterController target)
@@ -123,7 +138,11 @@ public partial class PlayerController : WorldEntityControllerBase<Player>
 		SelectedTarget = target;
 		_selectionRing = CreateSelectionRing();
 		_selectionRing.Name = "SelectionRing";
-		target.AddChild(_selectionRing);
+
+		World.Instance.AddChild(_selectionRing);
+		UpdateSelectionRingPosition();
+
+		GD.Print($"[TargetSelect] Selected monster: {target.Name}");
 	}
 
 	private void ClearSelection()
@@ -138,6 +157,24 @@ public partial class PlayerController : WorldEntityControllerBase<Player>
 		}
 
 		SelectedTarget = null;
+	}
+
+	private void UpdateSelectionRingPosition()
+	{
+		if (_selectionRing == null || !IsInstanceValid(_selectionRing) || SelectedTarget == null)
+		{
+			return;
+		}
+
+		var body = SelectedTarget.GetNodeOrNull<CharacterBody3D>("MonsterCharacterBody3D");
+		if (body == null)
+		{
+			return;
+		}
+
+		var bodyPos = body.GlobalPosition;
+		_selectionRing.GlobalPosition = new Vector3(bodyPos.X, bodyPos.Y - 0.98f, bodyPos.Z);
+		_selectionRing.GlobalRotationDegrees = new Vector3(90f, 0f, 0f);
 	}
 
 	public void TryAttack()
@@ -169,17 +206,10 @@ public partial class PlayerController : WorldEntityControllerBase<Player>
 		PlayAnimationForState(PlayerAnimationState.Attack, force: true);
 	}
 
-	private MonsterController FindMonsterUnderCrosshair()
+	private MonsterController FindMonsterAtScreenPosition(Vector2 screenPosition)
 	{
-		var viewport = GetViewport();
-		if (viewport == null)
-		{
-			return null;
-		}
-
-		var screenCenter = viewport.GetVisibleRect().Size / 2f;
-		var from = _camera.ProjectRayOrigin(screenCenter);
-		var to = from + _camera.ProjectRayNormal(screenCenter) * AttackRange;
+		var from = _camera.ProjectRayOrigin(screenPosition);
+		var to = from + _camera.ProjectRayNormal(screenPosition) * SelectionRayLength;
 
 		var spaceState = GetWorld3D().DirectSpaceState;
 		var query = new PhysicsRayQueryParameters3D
@@ -189,7 +219,13 @@ public partial class PlayerController : WorldEntityControllerBase<Player>
 			CollisionMask = uint.MaxValue,
 			CollideWithBodies = true,
 			CollideWithAreas = false,
+			HitFromInside = true,
 		};
+
+		if (CharacterBody != null)
+		{
+			query.Exclude.Add(CharacterBody.GetRid());
+		}
 
 		var result = spaceState.IntersectRay(query);
 		if (!result.TryGetValue("collider", out var colliderObj) || colliderObj.As<Node>() == null)
@@ -197,8 +233,19 @@ public partial class PlayerController : WorldEntityControllerBase<Player>
 			return null;
 		}
 
+		if (result.TryGetValue("position", out var hitPos))
+		{
+			GD.Print($"[TargetSelect] Ray hit: {colliderObj.As<Node>().Name} at {hitPos.AsVector3()}");
+		}
+
 		var hitNode = colliderObj.As<Node>();
-		return FindControllerInHierarchy<MonsterController>(hitNode);
+		var controller = FindControllerInHierarchy<MonsterController>(hitNode);
+		if (controller == null)
+		{
+			GD.Print($"[TargetSelect] No MonsterController found in hierarchy of {hitNode.Name}");
+		}
+
+		return controller;
 	}
 
 	private static MeshInstance3D CreateSelectionRing()
@@ -223,7 +270,6 @@ public partial class PlayerController : WorldEntityControllerBase<Player>
 		{
 			Mesh = torusMesh,
 			MaterialOverride = material,
-			Position = new Vector3(0.0f, 0.08f, 0.0f),
 			RotationDegrees = new Vector3(90.0f, 0.0f, 0.0f),
 		};
 
@@ -256,6 +302,7 @@ public partial class PlayerController : WorldEntityControllerBase<Player>
 		_cameraPivot = GetNode<Node3D>("CameraPivot");
 		_camera = GetNode<Camera3D>("CameraPivot/SpringArm3D/Camera3D");
 		_playerModelRoot = GetNode<Node3D>(PlayerModelPath);
+		GD.Print($"[TargetSelect] OnCommonNodesReady: _camera={_camera != null} _cameraPivot={_cameraPivot != null}");
 		EnsureAppearanceProfileApplied(force: true);
 	}
 
@@ -291,6 +338,7 @@ public partial class PlayerController : WorldEntityControllerBase<Player>
 		if (isLocalPlayer)
 		{
 			LocalInstance = this;
+			GD.Print($"[TargetSelect] LocalInstance set. Camera active: {_camera.Current}");
 		}
 		else if (ReferenceEquals(LocalInstance, this))
 		{
@@ -307,9 +355,16 @@ public partial class PlayerController : WorldEntityControllerBase<Player>
 			_attackCooldownRemaining -= (float)delta;
 		}
 
-		if (SelectedTarget != null && !IsInstanceValid(SelectedTarget))
+		if (SelectedTarget != null)
 		{
-			ClearSelection();
+			if (!IsInstanceValid(SelectedTarget))
+			{
+				ClearSelection();
+			}
+			else
+			{
+				UpdateSelectionRingPosition();
+			}
 		}
 
 		EnsureAppearanceProfileApplied();

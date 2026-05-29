@@ -34,6 +34,7 @@ offset_left = -180.0
 offset_right = 180.0
 offset_top = 8.0
 offset_bottom = 72.0
+z_index = 1
 
 [node name="TargetNameLabel" type="Label" parent="TargetInfoPanel"]
 layout_mode = 1
