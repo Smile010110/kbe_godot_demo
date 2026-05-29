@@ -3,12 +3,22 @@ using Godot;
 public partial class WorldUi : Control
 {
 	private Label _infoLabel;
+	private Panel _targetInfoPanel;
+	private Label _targetNameLabel;
+	private Label _targetHpLabel;
 	private double _refreshAccumulator;
 	private string _lastInfoText = string.Empty;
+
+	private MonsterController _cachedTarget;
+	private string _lastTargetName = string.Empty;
+	private string _lastTargetHpText = string.Empty;
 
 	public override void _Ready()
 	{
 		_infoLabel = GetNode<Label>("MarginContainer/InfoLabel");
+		_targetInfoPanel = GetNode<Panel>("TargetInfoPanel");
+		_targetNameLabel = GetNode<Label>("TargetInfoPanel/TargetNameLabel");
+		_targetHpLabel = GetNode<Label>("TargetInfoPanel/TargetHPLabel");
 		RefreshHud(force: true);
 	}
 
@@ -22,6 +32,7 @@ public partial class WorldUi : Control
 
 		_refreshAccumulator = 0.0d;
 		RefreshHud();
+		RefreshTargetInfo();
 	}
 
 	private void RefreshHud(bool force = false)
@@ -52,5 +63,53 @@ public partial class WorldUi : Control
 
 		_lastInfoText = nextInfoText;
 		_infoLabel.Text = nextInfoText;
+	}
+
+	private void RefreshTargetInfo()
+	{
+		var target = PlayerController.LocalInstance?.SelectedTarget;
+		if (target == null || !IsInstanceValid(target))
+		{
+			if (_targetInfoPanel.Visible)
+			{
+				_targetInfoPanel.Visible = false;
+				_lastTargetName = string.Empty;
+				_lastTargetHpText = string.Empty;
+			}
+			return;
+		}
+
+		if (!ReferenceEquals(target, _cachedTarget))
+		{
+			_cachedTarget = target;
+			_lastTargetName = string.Empty;
+			_lastTargetHpText = string.Empty;
+		}
+
+		var monster = target.Monster;
+		if (monster == null)
+		{
+			return;
+		}
+
+		var name = monster.DisplayName ?? "???";
+		var hpText = $"HP {monster.HitPoints} / MP {monster.ManaPoints}";
+
+		if (!_targetInfoPanel.Visible)
+		{
+			_targetInfoPanel.Visible = true;
+		}
+
+		if (_lastTargetName != name)
+		{
+			_lastTargetName = name;
+			_targetNameLabel.Text = name;
+		}
+
+		if (_lastTargetHpText != hpText)
+		{
+			_lastTargetHpText = hpText;
+			_targetHpLabel.Text = hpText;
+		}
 	}
 }

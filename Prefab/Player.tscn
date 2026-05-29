@@ -1,11 +1,9 @@
-[gd_scene load_steps=7 format=3 uid="uid://cnh1pf4xbbnis"]
+[gd_scene load_steps=6 format=3 uid="uid://cnh1pf4xbbnis"]
 
 [ext_resource type="Script" uid="uid://nvqlx3fa70qw" path="res://Prefab/PlayerController.cs" id="1_ec3bh"]
-[ext_resource type="Script" uid="uid://cacbl6q8lle0d" path="res://Scripts/player_character_body_3d.gd" id="2_ec3bh"]
-[ext_resource type="Script" uid="uid://d2r0g0arau8sj" path="res://UI/head_info.gd" id="3_ec3bh"]
-[ext_resource type="Script" uid="uid://cbxl558jghj21" path="res://Scripts/camera_pivot.gd" id="3_qe6vn"]
-[ext_resource type="PackedScene" path="res://Res/Player/player_1/model.fbx" id="4_m8ffq"]
-
+[ext_resource type="Script" uid="uid://cacbl6q8lle0d" path="res://Scripts/PlayerCharacterBody3D.cs" id="2_ec3bh"]
+[ext_resource type="Script" uid="uid://d2r0g0arau8sj" path="res://UI/HeadInfo.cs" id="3_ec3bh"]
+[ext_resource type="Script" uid="uid://cbxl558jghj21" path="res://Scripts/CameraPivot.cs" id="3_qe6vn"]
 [sub_resource type="CapsuleShape3D" id="CapsuleShape3D_bcbcq"]
 radius = 0.565877
 height = 1.96453
@@ -17,8 +15,7 @@ script = ExtResource("1_ec3bh")
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.837883, 0)
 script = ExtResource("2_ec3bh")
 
-[node name="PlayerModel" parent="PlayerCharacterBody3D" instance=ExtResource("4_m8ffq")]
-transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 0, -0.85, 0)
+[node name="PlayerModel" type="Node3D" parent="PlayerCharacterBody3D"]
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="PlayerCharacterBody3D"]
 shape = SubResource("CapsuleShape3D_bcbcq")

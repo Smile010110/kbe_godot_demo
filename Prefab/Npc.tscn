@@ -1,7 +1,7 @@
 [gd_scene load_steps=7 format=3 uid="uid://ckf2jk3cjrw14"]
 
 [ext_resource type="Script" uid="uid://bfoyip11br8tu" path="res://Prefab/NpcController.cs" id="1_w8q4m"]
-[ext_resource type="Script" uid="uid://d2r0g0arau8sj" path="res://UI/head_info.gd" id="2_1r5ku"]
+[ext_resource type="Script" uid="uid://d2r0g0arau8sj" path="res://UI/HeadInfo.cs" id="2_1r5ku"]
 
 [sub_resource type="CapsuleMesh" id="CapsuleMesh_8xv5u"]
 

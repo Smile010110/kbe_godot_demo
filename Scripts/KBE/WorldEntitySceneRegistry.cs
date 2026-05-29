@@ -11,6 +11,7 @@ public static class WorldEntitySceneRegistry
 		{ typeof(Npc), "res://Prefab/Npc.tscn" },
 	};
 
+	// 仅在 Godot 主线程访问，单线程模式（isMultiThreads=false）下安全。
 	private static readonly Dictionary<Type, PackedScene> LoadedScenes = new();
 
 	public static string GetScenePath<TEntity>() where TEntity : class
@@ -42,6 +43,11 @@ public static class WorldEntitySceneRegistry
 
 		var scenePath = GetScenePath(entityType);
 		var scene = GD.Load<PackedScene>(scenePath);
+		if (scene == null)
+		{
+			throw new InvalidOperationException($"Failed to load world-entity scene for {entityType.Name}: {scenePath}");
+		}
+
 		LoadedScenes[entityType] = scene;
 		return scene;
 	}

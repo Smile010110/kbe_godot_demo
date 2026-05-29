@@ -12,6 +12,7 @@ public partial class App : GodotKBEMain
 
 	private bool _isShuttingDown;
 	private bool _isRecoveringFromDisconnect;
+	// 仅从主线程 / CallDeferred 回调中访问；Godot 单线程模式下无需同步。
 	private string _pendingStatusMessage = string.Empty;
 
 	public KbeClient Client { get; private set; }
@@ -19,7 +20,9 @@ public partial class App : GodotKBEMain
 	public override void _Ready()
 	{
 		Instance = this;
-		AvatarInitConfigRepository.Warmup();
+		RoleConfigRepository.Warmup();
+		SexConfigRepository.Warmup();
+		PlayerAppearanceConfigRepository.Warmup();
 		KBELog.Init(new GodotLogProvider());
 		ip = GameConfig.KbEngineHost;
 		port = GameConfig.KbEnginePort;
@@ -64,8 +67,6 @@ public partial class App : GodotKBEMain
 		}
 
 		_isShuttingDown = true;
-		GD.Print("clientapp::OnDestroy(): begin");
-
 		if (Client != null)
 		{
 			Client.Disconnected -= OnClientDisconnected;
@@ -92,7 +93,6 @@ public partial class App : GodotKBEMain
 
 		gameapp = null;
 		KBEngine.Event.clear();
-		GD.Print("clientapp::OnDestroy(): end");
 	}
 
 	public string ConsumePendingStatusMessage()
@@ -130,7 +130,7 @@ public partial class App : GodotKBEMain
 		}
 
 		_isRecoveringFromDisconnect = true;
-		_pendingStatusMessage = "Disconnected from server. The server may have restarted. Please log in again.";
+		_pendingStatusMessage = "已与服务器断开连接，服务器可能已经重启，请重新登录。";
 		CallDeferred(nameof(RecoverFromUnexpectedDisconnect));
 	}
 
@@ -141,11 +141,14 @@ public partial class App : GodotKBEMain
 			return;
 		}
 
-		GD.Print("clientapp::RecoverFromUnexpectedDisconnect(): begin");
 		ClientRuntimeState.ResetForSceneTransition();
 		gameapp?.reset();
-		GetTree().ChangeSceneToFile(StartScenePath);
+		var error = GetTree().ChangeSceneToFile(StartScenePath);
+		if (error != Error.Ok)
+		{
+			_pendingStatusMessage = $"返回登录场景失败：{error}";
+		}
+
 		_isRecoveringFromDisconnect = false;
-		GD.Print("clientapp::RecoverFromUnexpectedDisconnect(): end");
 	}
 }

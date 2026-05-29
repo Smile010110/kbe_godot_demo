@@ -1,43 +1,55 @@
-﻿# Godot-specific
+# Godot 4+
+.godot/
+
+# Godot import cache (auto-generated, regenerated on editor open)
 .import/
+
+# Godot Mono (C#) temporary build files
+.godot/mono/
+.mono/
+
+# Build output
+build/
+[Bb]in/
+[Oo]bj/
+out/
+
+# Godot export config (optional; uncomment to track shared export presets)
 export.cfg
 export_presets.cfg
 
-# Godot 4 caches
-.godot/
+# IDE / Editor
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+*.DotSettings.user
 
 # OS-specific
 .DS_Store
 Thumbs.db
 desktop.ini
 
-# Editor-specific
-*.editorconfig
-*.godot/tmp/*
+# Auto-generated translation files
+*.translation
 
-# Godot Mono (C#) specific
-.mono/
-data_*/               # 编译生成的 C# 项目输出
-*.csproj
-*.sln
-*.user
-*.pidb
-*.suo
-*.dll
-*.exe
-*.mdb
-*.pdb
-*.cache/
-*.vs/
+# Temporary files
+*.tmp
+*.swp
+*~
 
-# Python virtualenv (如果有)
+# Python virtualenv
 venv/
 env/
 
-# Godot build artifacts (if exporting to HTML5, etc.)
-build/
+# Claude Code session data (personal)
+.claude/
 
-# VSCode or JetBrains project files
-.vscode/
-.idea/
-kbe_csharp_plugins
+# Personal agent configuration (not project code)
+SOUL.md
+USER.md
+
+# KBEngine generated SDK — regenerate with kbcmd after protocol changes
+# Run: kbcmd --clientsdk=csharp --outpath=kbe_csharp_plugins/
+kbe_csharp_plugins/

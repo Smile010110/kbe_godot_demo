@@ -1,22 +1,21 @@
 using Godot;
-using KBEngine;
 
 public static class WorldEntityRotationMapping
 {
 	private const float YawOffsetDegrees = 180.0f;
 
-	public static Vector3 ToGodotRotationDegrees(KBVector3 kbeDirection)
+	public static Vector3 ToGodotRotationDegrees(KbeVector3Value protocolDirection)
 	{
 		return new Vector3(
-			kbeDirection.y,
-			kbeDirection.z - YawOffsetDegrees,
-			kbeDirection.x
+			protocolDirection.Y,
+			protocolDirection.Z - YawOffsetDegrees,
+			protocolDirection.X
 		);
 	}
 
-	public static KBVector3 ToKbeDirection(Vector3 godotRotationDegrees)
+	public static KbeVector3Value ToProtocolDirection(Vector3 godotRotationDegrees)
 	{
-		return new KBVector3(
+		return new KbeVector3Value(
 			godotRotationDegrees.Z,
 			godotRotationDegrees.X,
 			godotRotationDegrees.Y + YawOffsetDegrees

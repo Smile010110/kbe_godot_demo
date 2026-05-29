@@ -9,6 +9,8 @@ public interface IWorldEntityView
 	bool ShowSecondaryInfo { get; }
 	ulong HitPoints { get; }
 	ulong ManaPoints { get; }
+	uint Attack { get; }
+	uint Defense { get; }
 	byte RawMoveSpeed { get; }
 	float MoveSpeedUnits { get; }
 	Vector3 WorldPosition { get; }

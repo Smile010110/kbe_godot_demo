@@ -9,6 +9,7 @@ public sealed class WorldEntityRenderBinding<TEntity, TController>
 	private readonly Entity _owner;
 	private readonly TEntity _entity;
 	private bool _waitingForWorld;
+	private bool _isDestroyed;
 
 	public WorldEntityRenderBinding(Entity owner, TEntity entity)
 	{
@@ -41,7 +42,7 @@ public sealed class WorldEntityRenderBinding<TEntity, TController>
 
 	public void HandleWorldReady()
 	{
-		if (!_waitingForWorld)
+		if (_isDestroyed || !_waitingForWorld)
 		{
 			return;
 		}
@@ -52,9 +53,9 @@ public sealed class WorldEntityRenderBinding<TEntity, TController>
 
 	public void CreateOrBindRenderObject()
 	{
-		if (World.Instance == null)
+		if (_isDestroyed || World.Instance == null)
 		{
-			_waitingForWorld = true;
+			_waitingForWorld = !_isDestroyed;
 			return;
 		}
 
@@ -75,6 +76,11 @@ public sealed class WorldEntityRenderBinding<TEntity, TController>
 
 	public void RefreshInfo()
 	{
+		if (_isDestroyed)
+		{
+			return;
+		}
+
 		if (_owner.renderObj is TController entityController)
 		{
 			entityController.SetHeadInfo();
@@ -83,6 +89,11 @@ public sealed class WorldEntityRenderBinding<TEntity, TController>
 
 	public void RefreshTransform()
 	{
+		if (_isDestroyed)
+		{
+			return;
+		}
+
 		if (_owner.renderObj is TController entityController)
 		{
 			entityController.UpdateFromEntity();
@@ -102,6 +113,7 @@ public sealed class WorldEntityRenderBinding<TEntity, TController>
 
 	public void Destroy()
 	{
+		_isDestroyed = true;
 		World.OnWorldReady -= HandleWorldReady;
 		Cleanup();
 	}

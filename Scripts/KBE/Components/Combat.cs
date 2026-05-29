@@ -7,6 +7,16 @@ namespace KBEngine
 			RefreshOwnerPresentation();
 		}
 
+		public override void onAttackChanged(uint oldValue)
+		{
+			RefreshOwnerPresentation();
+		}
+
+		public override void onDefenseChanged(uint oldValue)
+		{
+			RefreshOwnerPresentation();
+		}
+
 		public override void onHpChanged(ulong oldValue)
 		{
 			RefreshOwnerPresentation();

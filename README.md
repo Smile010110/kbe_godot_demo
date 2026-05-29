@@ -26,6 +26,12 @@ Handwritten KBEngine integration layer:
 - [App.cs](/d:/UGit/kbe_godot_demo/App.cs)
 - `Scripts/KBE/`
 
+Protocol adapter boundary inside the handwritten layer:
+
+- `Scripts/KBE/Protocol/`
+- wraps generated protocol structs such as `KBVector2`, `KBVector3`, `KBVector4`
+- is the only handwritten area that should translate between generated protocol values and business-facing objects
+
 Core handwritten world-entity primitives:
 
 - `IWorldEntityView`
@@ -58,6 +64,12 @@ Client data tables:
 - `common/Data/`
 - `common/DataTables/`
 
+Current appearance/config tables:
+
+- `common/Data/d_role.json`
+- `common/Data/d_sex.json`
+- `common/Data/player_model_profiles.json`
+
 Runtime tuning that should stay in the handwritten layer:
 
 - `GameConfig`
@@ -72,6 +84,8 @@ Only the handwritten KBEngine integration layer should reference:
 - `KBEngine.Event`
 - generated entity/component base classes such as `PlayerBase`, `CombatBase`, `MotionBase`
 - generated protocol structs such as `KBVector3`
+
+Within `Scripts/KBE/`, business-facing entity logic should prefer the protocol adapters under `Scripts/KBE/Protocol/` instead of reading generated structs directly.
 
 `UI/`, `Prefab/`, and other presentation code should only talk to handwritten wrappers such as:
 

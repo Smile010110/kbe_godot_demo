@@ -7,7 +7,8 @@ public sealed class KbeClient : IDisposable
 
 	public event Action<bool> ConnectionStateChanged;
 	public event Action<string> LoginFailed;
-	public event Action BaseappLoginSucceeded;
+	public event Action BaseappLoginStarted;
+	public event Action<Player> LocalPlayerEnteredWorld;
 	public event Action Disconnected;
 
 	public bool IsInitialized => KBEngineApp.app != null;
@@ -22,6 +23,8 @@ public sealed class KbeClient : IDisposable
 		KBEngine.Event.registerOut(EventOutTypes.onConnectionState, this, nameof(HandleConnectionState));
 		KBEngine.Event.registerOut(EventOutTypes.onLoginFailed, this, nameof(HandleLoginFailed));
 		KBEngine.Event.registerOut(EventOutTypes.onLoginBaseapp, this, nameof(HandleLoginBaseapp));
+		KBEngine.Event.registerOut(EventOutTypes.onLoginBaseappFailed, this, nameof(HandleLoginBaseappFailed));
+		KBEngine.Event.registerOut(EventOutTypes.onEnterWorld, this, nameof(HandleEnterWorld));
 		KBEngine.Event.registerOut(EventOutTypes.onDisconnected, this, nameof(HandleDisconnected));
 		_isBound = true;
 	}
@@ -36,6 +39,8 @@ public sealed class KbeClient : IDisposable
 		KBEngine.Event.deregisterOut(EventOutTypes.onConnectionState, this, nameof(HandleConnectionState));
 		KBEngine.Event.deregisterOut(EventOutTypes.onLoginFailed, this, nameof(HandleLoginFailed));
 		KBEngine.Event.deregisterOut(EventOutTypes.onLoginBaseapp, this, nameof(HandleLoginBaseapp));
+		KBEngine.Event.deregisterOut(EventOutTypes.onLoginBaseappFailed, this, nameof(HandleLoginBaseappFailed));
+		KBEngine.Event.deregisterOut(EventOutTypes.onEnterWorld, this, nameof(HandleEnterWorld));
 		KBEngine.Event.deregisterOut(EventOutTypes.onDisconnected, this, nameof(HandleDisconnected));
 		_isBound = false;
 	}
@@ -44,7 +49,7 @@ public sealed class KbeClient : IDisposable
 	{
 		if (KBEngineApp.app == null)
 		{
-			throw new InvalidOperationException("KBEngine is not initialized.");
+			throw new InvalidOperationException("KBEngine 尚未初始化。");
 		}
 
 		KBEngineApp.app.login(account, password, payload);
@@ -60,6 +65,28 @@ public sealed class KbeClient : IDisposable
 		Unbind();
 	}
 
+	public bool TryGetLocalPlayer(out Player player)
+	{
+		var app = KBEngineApp.app;
+		player = Player.LocalPlayer;
+		if (player != null && player.inWorld && app != null && player.id == app.entity_id)
+		{
+			return true;
+		}
+
+		var entity = app?.player();
+		player = entity as Player;
+		return player != null && entity.inWorld && app != null && entity.id == app.entity_id;
+	}
+
+	public void NotifyIfLocalPlayerReady()
+	{
+		if (TryGetLocalPlayer(out var player))
+		{
+			LocalPlayerEnteredWorld?.Invoke(player);
+		}
+	}
+
 	public void HandleConnectionState(bool success)
 	{
 		ConnectionStateChanged?.Invoke(success);
@@ -70,9 +97,30 @@ public sealed class KbeClient : IDisposable
 		LoginFailed?.Invoke(DescribeServerError(retCode));
 	}
 
+	public void HandleLoginBaseappFailed(ushort retCode)
+	{
+		LoginFailed?.Invoke(DescribeServerError(retCode));
+	}
+
 	public void HandleLoginBaseapp()
 	{
-		BaseappLoginSucceeded?.Invoke();
+		BaseappLoginStarted?.Invoke();
+		NotifyIfLocalPlayerReady();
+	}
+
+	public void HandleEnterWorld(KBEngine.Entity entity)
+	{
+		if (entity is not Player player)
+		{
+			return;
+		}
+
+		if (KBEngineApp.app == null || entity.id != KBEngineApp.app.entity_id)
+		{
+			return;
+		}
+
+		LocalPlayerEnteredWorld?.Invoke(player);
 	}
 
 	public void HandleDisconnected()

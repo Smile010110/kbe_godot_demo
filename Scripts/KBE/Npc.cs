@@ -4,26 +4,31 @@ using KBEngine;
 public class Npc : NpcBase, IServerDrivenWorldEntity, IWorldEntityRenderHooks
 {
 	private readonly WorldEntityRenderBinding<Npc, NpcController> _renderBinding;
+	private readonly KbeNpcProtocolState _protocolState;
 
 	public Npc()
 	{
+		_protocolState = new KbeNpcProtocolState(this);
 		_renderBinding = new WorldEntityRenderBinding<Npc, NpcController>(this, this);
 	}
 
+	public KbeNpcProtocolState Protocol => _protocolState;
 	public bool IsLocallyControlled => false;
-	public int EntityId => id;
-	public ulong DatabaseId => dbid;
+	public int EntityId => _protocolState.EntityId;
+	public ulong DatabaseId => _protocolState.DatabaseId;
 	public WorldEntityKind EntityKind => WorldEntityKind.Npc;
 	public bool IsTeammate => false;
-	public string DisplayName => string.IsNullOrWhiteSpace(name) ? $"Npc {id}" : name;
+	public string DisplayName => _protocolState.DisplayName;
 	public string SecondaryInfoText => RawMoveSpeed > 0 ? WorldEntityNameplateText.BuildSpeedOnlyLine(RawMoveSpeed) : string.Empty;
 	public bool ShowSecondaryInfo => !string.IsNullOrWhiteSpace(SecondaryInfoText);
 	public ulong HitPoints => 0UL;
 	public ulong ManaPoints => 0UL;
-	public byte RawMoveSpeed => motion != null ? motion.moveSpeed : (byte)0;
-	public float MoveSpeedUnits => Mathf.Max(0.1f, RawMoveSpeed / 10.0f);
-	public Vector3 WorldPosition => new Vector3(position.x, position.y, position.z);
-	public Vector3 WorldRotationDegrees => WorldEntityRotationMapping.ToGodotRotationDegrees(direction);
+	public uint Attack => 0U;
+	public uint Defense => 0U;
+	public byte RawMoveSpeed => _protocolState.Motion.RawMoveSpeed;
+	public float MoveSpeedUnits => _protocolState.Motion.MoveSpeedUnits;
+	public Vector3 WorldPosition => _protocolState.WorldPosition;
+	public Vector3 WorldRotationDegrees => _protocolState.WorldRotationDegrees;
 	public bool UsePlanarRotation => true;
 
 	public override void __init__()

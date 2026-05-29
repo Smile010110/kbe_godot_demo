@@ -2,9 +2,17 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using Godot;
+using CommonData;
 
 public partial class PlayerController : WorldEntityControllerBase<Player>
 {
+	private sealed class PlayerAnimationRuntimeSet
+	{
+		public AnimationLibrary AnimationLibrary { get; } = new();
+		public Dictionary<PlayerAnimationState, string> StateAnimations { get; } = new();
+		public Dictionary<string, string> AnimationKeysByStem { get; } = new(StringComparer.OrdinalIgnoreCase);
+	}
+
 	private enum PlayerAnimationState
 	{
 		Idle,
@@ -14,18 +22,17 @@ public partial class PlayerController : WorldEntityControllerBase<Player>
 		StrafeRight,
 		JumpIdle,
 		JumpMove,
+		Attack,
 	}
 
 	private const string PlayerModelPath = "PlayerCharacterBody3D/PlayerModel";
-	private const string PlayerAnimationFolderPath = "res://Res/Player/player_1";
-	private const string PlayerBaseModelFileName = "model.fbx";
 	private const string RuntimeAnimationLibraryName = "player_runtime";
 	private const float AnimationMoveEpsilon = 0.05f;
 	private const float DirectionSelectionThreshold = 0.35f;
 
-	private static AnimationLibrary s_sharedAnimationLibrary;
-	private static Dictionary<PlayerAnimationState, string> s_sharedStateAnimations;
-	private static Dictionary<string, string> s_sharedAnimationKeysByStem;
+	private static readonly Dictionary<uint, PlayerAnimationRuntimeSet> s_sharedAnimationRuntimeSets = new();
+
+	// 仅在 Godot 主线程访问，单线程模式（isMultiThreads=false）下安全。
 
 	[Export]
 	public float RemotePlayerInterpolationSeconds = 0.06f;
@@ -35,16 +42,21 @@ public partial class PlayerController : WorldEntityControllerBase<Player>
 	public float RemotePlayerMaxInterpolationSeconds = 0.12f;
 	[Export]
 	public float RemotePlayerSnapDistance = 0.9f;
+	[Export]
+	public float AttackCooldownSeconds = 0.6f;
+	[Export]
+	public float AttackRange = 4.0f;
 
 	public static PlayerController LocalInstance { get; private set; }
 
 	public Player Player => EntityView;
 	public string CurrentAnimationKey => _currentAnimationKey;
 	public string CurrentAnimationStateName => _currentAnimationStateName;
+	public MonsterController SelectedTarget { get; private set; }
 
 	private Node3D _cameraPivot;
 	private Camera3D _camera;
-	private Node3D _playerModel;
+	private Node3D _playerModelRoot;
 	private AnimationPlayer _modelAnimationPlayer;
 	private Vector3 _lastAnimationPosition;
 	private bool _hasLastAnimationPosition;
@@ -53,10 +65,20 @@ public partial class PlayerController : WorldEntityControllerBase<Player>
 	private bool _wasOnFloorLastFrame = true;
 	private bool _hasLatchedAirborneState;
 	private PlayerAnimationState _latchedAirborneState = PlayerAnimationState.JumpIdle;
+	private PlayerAppearanceProfile _currentAppearanceProfile;
+	private PlayerAnimationRuntimeSet _currentAnimationRuntimeSet;
+	private float _attackCooldownRemaining;
+	private MeshInstance3D _selectionRing;
 
 	protected override string CharacterBodyPath => "PlayerCharacterBody3D";
 	protected override string NameLabelPath => "PlayerCharacterBody3D/HeadInfo/NameLabel";
 	protected override string InfoLabelPath => "PlayerCharacterBody3D/HeadInfo/HPLabel";
+
+	public override void BindEntity(Player entity)
+	{
+		base.BindEntity(entity);
+		EnsureAppearanceProfileApplied(force: true);
+	}
 
 	public override void _ExitTree()
 	{
@@ -68,9 +90,160 @@ public partial class PlayerController : WorldEntityControllerBase<Player>
 		base._ExitTree();
 	}
 
-	public void BindPlayer(Player player)
+	public void TrySelectTarget()
 	{
-		BindEntity(player);
+		if (Player == null || !Player.IsLocalPlayer)
+		{
+			return;
+		}
+
+		if (_camera == null)
+		{
+			return;
+		}
+
+		var monsterController = FindMonsterUnderCrosshair();
+		if (monsterController == null)
+		{
+			ClearSelection();
+			return;
+		}
+
+		if (ReferenceEquals(monsterController, SelectedTarget))
+		{
+			return;
+		}
+
+		ClearSelection();
+		SelectTarget(monsterController);
+	}
+
+	private void SelectTarget(MonsterController target)
+	{
+		SelectedTarget = target;
+		_selectionRing = CreateSelectionRing();
+		_selectionRing.Name = "SelectionRing";
+		target.AddChild(_selectionRing);
+	}
+
+	private void ClearSelection()
+	{
+		if (_selectionRing != null)
+		{
+			if (IsInstanceValid(_selectionRing))
+			{
+				_selectionRing.QueueFree();
+			}
+			_selectionRing = null;
+		}
+
+		SelectedTarget = null;
+	}
+
+	public void TryAttack()
+	{
+		if (Player == null || !Player.IsLocalPlayer)
+		{
+			return;
+		}
+
+		if (SelectedTarget == null || !IsInstanceValid(SelectedTarget))
+		{
+			ClearSelection();
+			return;
+		}
+
+		if (_attackCooldownRemaining > 0f)
+		{
+			return;
+		}
+
+		var targetEntityId = SelectedTarget.Monster?.EntityId ?? -1;
+		if (targetEntityId <= 0)
+		{
+			return;
+		}
+
+		Player.AttackTarget(targetEntityId);
+		_attackCooldownRemaining = AttackCooldownSeconds;
+		PlayAnimationForState(PlayerAnimationState.Attack, force: true);
+	}
+
+	private MonsterController FindMonsterUnderCrosshair()
+	{
+		var viewport = GetViewport();
+		if (viewport == null)
+		{
+			return null;
+		}
+
+		var screenCenter = viewport.GetVisibleRect().Size / 2f;
+		var from = _camera.ProjectRayOrigin(screenCenter);
+		var to = from + _camera.ProjectRayNormal(screenCenter) * AttackRange;
+
+		var spaceState = GetWorld3D().DirectSpaceState;
+		var query = new PhysicsRayQueryParameters3D
+		{
+			From = from,
+			To = to,
+			CollisionMask = uint.MaxValue,
+			CollideWithBodies = true,
+			CollideWithAreas = false,
+		};
+
+		var result = spaceState.IntersectRay(query);
+		if (!result.TryGetValue("collider", out var colliderObj) || colliderObj.As<Node>() == null)
+		{
+			return null;
+		}
+
+		var hitNode = colliderObj.As<Node>();
+		return FindControllerInHierarchy<MonsterController>(hitNode);
+	}
+
+	private static MeshInstance3D CreateSelectionRing()
+	{
+		var torusMesh = new TorusMesh
+		{
+			InnerRadius = 0.35f,
+			OuterRadius = 0.45f,
+		};
+
+		var material = new StandardMaterial3D
+		{
+			AlbedoColor = new Color(1.0f, 0.15f, 0.15f, 1.0f),
+			EmissionEnabled = true,
+			Emission = new Color(1.0f, 0.0f, 0.0f),
+			EmissionEnergyMultiplier = 2.0f,
+			ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded,
+			DisableReceiveShadows = true,
+		};
+
+		var ring = new MeshInstance3D
+		{
+			Mesh = torusMesh,
+			MaterialOverride = material,
+			Position = new Vector3(0.0f, 0.08f, 0.0f),
+			RotationDegrees = new Vector3(90.0f, 0.0f, 0.0f),
+		};
+
+		return ring;
+	}
+
+	private static T FindControllerInHierarchy<T>(Node node) where T : Node
+	{
+		var current = node;
+		while (current != null)
+		{
+			if (current is T typedNode)
+			{
+				return typedNode;
+			}
+
+			current = current.GetParentOrNull<Node>();
+		}
+
+		return null;
 	}
 
 	public static void ResetStaticState()
@@ -82,11 +255,8 @@ public partial class PlayerController : WorldEntityControllerBase<Player>
 	{
 		_cameraPivot = GetNode<Node3D>("CameraPivot");
 		_camera = GetNode<Camera3D>("CameraPivot/SpringArm3D/Camera3D");
-		_playerModel = GetNode<Node3D>(PlayerModelPath);
-		_modelAnimationPlayer = FindAnimationPlayer(_playerModel);
-		EnsureAnimationLibraryLoaded();
-		AttachAnimationLibrary();
-		PlayAnimationForState(PlayerAnimationState.Idle, force: true);
+		_playerModelRoot = GetNode<Node3D>(PlayerModelPath);
+		EnsureAppearanceProfileApplied(force: true);
 	}
 
 	protected override void ApplyControllerConfigDefaults()
@@ -100,7 +270,13 @@ public partial class PlayerController : WorldEntityControllerBase<Player>
 
 	protected override void UpdateControllerState()
 	{
-		if (Player == null || CharacterBody == null || _cameraPivot == null || _camera == null)
+		if (CharacterBody == null || _cameraPivot == null || _camera == null)
+		{
+			return;
+		}
+
+		EnsureAppearanceProfileApplied();
+		if (Player == null)
 		{
 			return;
 		}
@@ -125,6 +301,18 @@ public partial class PlayerController : WorldEntityControllerBase<Player>
 	public override void _Process(double delta)
 	{
 		base._Process(delta);
+
+		if (_attackCooldownRemaining > 0f)
+		{
+			_attackCooldownRemaining -= (float)delta;
+		}
+
+		if (SelectedTarget != null && !IsInstanceValid(SelectedTarget))
+		{
+			ClearSelection();
+		}
+
+		EnsureAppearanceProfileApplied();
 		UpdateAnimationState((float)delta);
 	}
 
@@ -155,7 +343,12 @@ public partial class PlayerController : WorldEntityControllerBase<Player>
 
 	private void UpdateAnimationState(float delta)
 	{
-		if (_modelAnimationPlayer == null || CharacterBody == null || Player == null)
+		if (_modelAnimationPlayer == null || CharacterBody == null || Player == null || _currentAnimationRuntimeSet == null)
+		{
+			return;
+		}
+
+		if (_attackCooldownRemaining > 0f)
 		{
 			return;
 		}
@@ -286,7 +479,7 @@ public partial class PlayerController : WorldEntityControllerBase<Player>
 
 	private void PlayAnimationForState(PlayerAnimationState state, bool force = false)
 	{
-		if (_modelAnimationPlayer == null || s_sharedStateAnimations == null || !s_sharedStateAnimations.TryGetValue(state, out var animationKey))
+		if (_modelAnimationPlayer == null || _currentAnimationRuntimeSet == null || !_currentAnimationRuntimeSet.StateAnimations.TryGetValue(state, out var animationKey))
 		{
 			return;
 		}
@@ -301,45 +494,107 @@ public partial class PlayerController : WorldEntityControllerBase<Player>
 		_modelAnimationPlayer.Play(animationKey);
 	}
 
-	private static bool HasAnimationForState(PlayerAnimationState state)
+	private void EnsureAppearanceProfileApplied(bool force = false)
 	{
-		return s_sharedStateAnimations != null && s_sharedStateAnimations.ContainsKey(state);
+		if (_playerModelRoot == null)
+		{
+			return;
+		}
+
+		var profile = ResolveAppearanceProfile();
+		if (!force && _currentAppearanceProfile != null && _currentAppearanceProfile.ModelId == profile.ModelId)
+		{
+			return;
+		}
+
+		_currentAppearanceProfile = profile;
+		_currentAnimationKey = string.Empty;
+		_currentAnimationStateName = PlayerAnimationState.Idle.ToString();
+		LoadModelInstance(profile);
+		_currentAnimationRuntimeSet = EnsureAnimationRuntimeSetLoaded(profile);
+		AttachAnimationLibrary(_currentAnimationRuntimeSet);
+		PlayAnimationForState(PlayerAnimationState.Idle, force: true);
 	}
 
-	private void AttachAnimationLibrary()
+	private PlayerAppearanceProfile ResolveAppearanceProfile()
 	{
-		if (_modelAnimationPlayer == null || s_sharedAnimationLibrary == null)
+		if (Player != null && PlayerAppearanceConfigRepository.TryGetByModelId(Player.AppearanceModelId, out var profile))
+		{
+			return profile;
+		}
+
+		return PlayerAppearanceConfigRepository.GetDefaultProfile();
+	}
+
+	private void LoadModelInstance(PlayerAppearanceProfile profile)
+	{
+		foreach (Node child in _playerModelRoot.GetChildren())
+		{
+			_playerModelRoot.RemoveChild(child);
+			child.QueueFree();
+		}
+
+		var modelScene = GD.Load<PackedScene>(profile.ModelScenePath);
+		if (modelScene == null)
+		{
+			GD.PushWarning($"Player model scene not found: {profile.ModelScenePath}");
+			_modelAnimationPlayer = null;
+			return;
+		}
+
+		var instantiatedNode = modelScene.Instantiate<Node>();
+		Node3D modelNode;
+		if (instantiatedNode is Node3D instantiatedNode3D)
+		{
+			modelNode = instantiatedNode3D;
+		}
+		else
+		{
+			modelNode = new Node3D();
+			modelNode.AddChild(instantiatedNode);
+		}
+
+		modelNode.Name = "ModelInstance";
+		modelNode.Position = profile.ModelPositionVector;
+		modelNode.RotationDegrees = profile.ModelRotationDegreesVector;
+		modelNode.Scale = profile.ModelScaleVector;
+		_playerModelRoot.AddChild(modelNode);
+		_modelAnimationPlayer = FindAnimationPlayer(_playerModelRoot);
+	}
+
+	private void AttachAnimationLibrary(PlayerAnimationRuntimeSet runtimeSet)
+	{
+		if (_modelAnimationPlayer == null || runtimeSet == null)
 		{
 			return;
 		}
 
 		if (_modelAnimationPlayer.HasAnimationLibrary(RuntimeAnimationLibraryName))
 		{
-			return;
+			_modelAnimationPlayer.RemoveAnimationLibrary(RuntimeAnimationLibraryName);
 		}
 
 		_modelAnimationPlayer.AddAnimationLibrary(
 			RuntimeAnimationLibraryName,
-			(AnimationLibrary)s_sharedAnimationLibrary.Duplicate(true)
+			(AnimationLibrary)runtimeSet.AnimationLibrary.Duplicate(true)
 		);
 	}
 
-	private static void EnsureAnimationLibraryLoaded()
+	private static PlayerAnimationRuntimeSet EnsureAnimationRuntimeSetLoaded(PlayerAppearanceProfile profile)
 	{
-		if (s_sharedAnimationLibrary != null && s_sharedStateAnimations != null)
+		if (s_sharedAnimationRuntimeSets.TryGetValue(profile.ModelId, out var runtimeSet))
 		{
-			return;
+			return runtimeSet;
 		}
 
-		s_sharedAnimationLibrary = new AnimationLibrary();
-		s_sharedStateAnimations = new Dictionary<PlayerAnimationState, string>();
-		s_sharedAnimationKeysByStem = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+		runtimeSet = new PlayerAnimationRuntimeSet();
 
-		var dir = DirAccess.Open(PlayerAnimationFolderPath);
+		var dir = DirAccess.Open(profile.ResourceFolder);
 		if (dir == null)
 		{
-			GD.PushWarning($"Player animation folder not found: {PlayerAnimationFolderPath}");
-			return;
+			GD.PushWarning($"Player animation folder not found: {profile.ResourceFolder}");
+			s_sharedAnimationRuntimeSets[profile.ModelId] = runtimeSet;
+			return runtimeSet;
 		}
 
 		dir.ListDirBegin();
@@ -356,21 +611,23 @@ public partial class PlayerController : WorldEntityControllerBase<Player>
 				continue;
 			}
 
-			if (string.Equals(fileName, PlayerBaseModelFileName, StringComparison.OrdinalIgnoreCase))
+			if (string.Equals(fileName, profile.ModelSceneFile, StringComparison.OrdinalIgnoreCase))
 			{
 				continue;
 			}
 
-			LoadAnimationClip(fileName);
+			LoadAnimationClip(profile, runtimeSet, fileName);
 		}
 
 		dir.ListDirEnd();
-		ResolveStateAnimationMap();
+		ResolveStateAnimationMap(runtimeSet);
+		s_sharedAnimationRuntimeSets[profile.ModelId] = runtimeSet;
+		return runtimeSet;
 	}
 
-	private static void LoadAnimationClip(string fileName)
+	private static void LoadAnimationClip(PlayerAppearanceProfile profile, PlayerAnimationRuntimeSet runtimeSet, string fileName)
 	{
-		var scenePath = $"{PlayerAnimationFolderPath}/{fileName}";
+		var scenePath = $"{profile.ResourceFolder.TrimEnd('/')}/{fileName}";
 		var animationScene = GD.Load<PackedScene>(scenePath);
 		if (animationScene == null)
 		{
@@ -394,7 +651,7 @@ public partial class PlayerController : WorldEntityControllerBase<Player>
 
 		var fileStem = Path.GetFileNameWithoutExtension(fileName);
 		var animationName = SanitizeAnimationName(fileStem);
-		if (s_sharedAnimationLibrary.HasAnimation(animationName))
+		if (runtimeSet.AnimationLibrary.HasAnimation(animationName))
 		{
 			sceneRoot.QueueFree();
 			return;
@@ -402,8 +659,8 @@ public partial class PlayerController : WorldEntityControllerBase<Player>
 
 		var duplicatedAnimation = (Animation)animation.Duplicate(true);
 		ConfigureAnimationClip(duplicatedAnimation, fileStem);
-		s_sharedAnimationLibrary.AddAnimation(animationName, duplicatedAnimation);
-		s_sharedAnimationKeysByStem[fileStem] = $"{RuntimeAnimationLibraryName}/{animationName}";
+		runtimeSet.AnimationLibrary.AddAnimation(animationName, duplicatedAnimation);
+		runtimeSet.AnimationKeysByStem[fileStem] = $"{RuntimeAnimationLibraryName}/{animationName}";
 		sceneRoot.QueueFree();
 	}
 
@@ -430,65 +687,76 @@ public partial class PlayerController : WorldEntityControllerBase<Player>
 		return null;
 	}
 
-	private static void ResolveStateAnimationMap()
+	private static void ResolveStateAnimationMap(PlayerAnimationRuntimeSet runtimeSet)
 	{
-		TryAssignStateAnimation(PlayerAnimationState.Idle,
+		TryAssignStateAnimation(runtimeSet, PlayerAnimationState.Idle,
 			"idle",
 			"idle_2",
 			"idle_3",
 			"idle_4",
 			"idle_5");
 
-		TryAssignStateAnimation(PlayerAnimationState.MoveForward,
+		TryAssignStateAnimation(runtimeSet, PlayerAnimationState.MoveForward,
 			"walk",
 			"walk_2",
 			"run",
 			"run_2");
 
-		TryAssignStateAnimation(PlayerAnimationState.MoveBackward,
+		TryAssignStateAnimation(runtimeSet, PlayerAnimationState.MoveBackward,
 			"walk",
 			"walk_2",
 			"run",
 			"run_2");
 
-		TryAssignStateAnimation(PlayerAnimationState.StrafeLeft,
+		TryAssignStateAnimation(runtimeSet, PlayerAnimationState.StrafeLeft,
 			"walk",
 			"walk_2",
 			"run",
 			"run_2");
 
-		TryAssignStateAnimation(PlayerAnimationState.StrafeRight,
+		TryAssignStateAnimation(runtimeSet, PlayerAnimationState.StrafeRight,
 			"walk",
 			"walk_2",
 			"run",
 			"run_2");
 
-		TryAssignStateAnimation(PlayerAnimationState.JumpIdle,
+		TryAssignStateAnimation(runtimeSet, PlayerAnimationState.JumpIdle,
 			"jump_2",
 			"jump_attack",
 			"jump");
 
-		TryAssignStateAnimation(PlayerAnimationState.JumpMove,
+		TryAssignStateAnimation(runtimeSet, PlayerAnimationState.JumpMove,
 			"jump",
 			"jump_attack",
 			"jump_2");
+
+		TryAssignStateAnimation(runtimeSet, PlayerAnimationState.Attack,
+			"attack",
+			"slash",
+			"slash_2",
+			"slash_3",
+			"kick",
+			"kick_2",
+			"slide_attack",
+			"high_spin_attack",
+			"spell_cast");
 	}
 
-	private static void TryAssignStateAnimation(PlayerAnimationState state, params string[] preferredFileStems)
+	private static void TryAssignStateAnimation(PlayerAnimationRuntimeSet runtimeSet, PlayerAnimationState state, params string[] preferredFileStems)
 	{
-		if (s_sharedAnimationKeysByStem == null)
+		if (runtimeSet == null)
 		{
 			return;
 		}
 
 		foreach (var preferredFileStem in preferredFileStems)
 		{
-			if (!s_sharedAnimationKeysByStem.TryGetValue(preferredFileStem, out var animationKey))
+			if (!runtimeSet.AnimationKeysByStem.TryGetValue(preferredFileStem, out var animationKey))
 			{
 				continue;
 			}
 
-			s_sharedStateAnimations[state] = animationKey;
+			runtimeSet.StateAnimations[state] = animationKey;
 			return;
 		}
 	}

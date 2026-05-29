@@ -44,13 +44,25 @@ public partial class World : Node3D
 			return;
 		}
 
-		var uiParent = GetTree().CurrentScene ?? GetParent();
+		var tree = GetTree();
+		if (tree == null)
+		{
+			return;
+		}
+
+		var uiParent = tree.CurrentScene ?? GetParent();
 		if (uiParent == null)
 		{
 			return;
 		}
 
 		var worldUiScene = GD.Load<PackedScene>(WorldUiScenePath);
+		if (worldUiScene == null)
+		{
+			GD.PushWarning($"World UI scene not found: {WorldUiScenePath}");
+			return;
+		}
+
 		_worldUi ??= worldUiScene.Instantiate<Control>();
 		_worldUi.MouseFilter = Control.MouseFilterEnum.Ignore;
 		if (_worldUi.GetParent() == null)

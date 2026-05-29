@@ -1,10 +1,10 @@
 using System;
 using Godot;
 using KBEngine;
+using CommonData;
 
 public class Player : PlayerBase, ILocallyControlledWorldEntity, IWorldEntityRenderHooks
 {
-	public static event Action OnLocalPlayerEnterWorldRequested;
 	public static Player LocalPlayer { get; private set; }
 
 	private const float PositionSyncEpsilonSquared = 0.0001f;
@@ -12,6 +12,7 @@ public class Player : PlayerBase, ILocallyControlledWorldEntity, IWorldEntityRen
 	private const ulong MillisecondsThreshold = 1_000_000_000_000UL;
 
 	private readonly WorldEntityRenderBinding<Player, PlayerController> _renderBinding;
+	private readonly KbePlayerProtocolState _protocolState;
 	private Vector3 _lastSyncedWorldPosition;
 	private Vector3 _lastSyncedWorldRotationDegrees;
 	private bool _hasLastSyncedTransform;
@@ -22,41 +23,58 @@ public class Player : PlayerBase, ILocallyControlledWorldEntity, IWorldEntityRen
 
 	public Player()
 	{
+		_protocolState = new KbePlayerProtocolState(this);
 		_renderBinding = new WorldEntityRenderBinding<Player, PlayerController>(this, this);
 	}
 
 	public static void ResetStaticState()
 	{
 		LocalPlayer = null;
-		OnLocalPlayerEnterWorldRequested = null;
 	}
 
-	public bool IsLocalPlayer => isPlayer();
+	public KbePlayerProtocolState Protocol => _protocolState;
+	public bool IsLocalPlayer => _protocolState.IsLocalPlayer;
 	public bool IsLocallyControlled => IsLocalPlayer;
-	public int EntityId => id;
-	public ulong DatabaseId => dbid;
-	public ushort ServerId => server_id;
+	public int EntityId => _protocolState.EntityId;
+	public ulong DatabaseId => _protocolState.DatabaseId;
+	public ushort ServerId => _protocolState.ServerId;
 	public ulong ServerTime => GetCurrentServerTime();
 	public string ServerTimeText => FormatServerTime(ServerTime);
-	public byte SpaceLine => space_line;
-	public uint SpaceUtype => space_utype;
+	public ushort Level => _protocolState.Level;
+	public byte Role => _protocolState.Role;
+	public byte Sex => _protocolState.Sex;
+	public uint Exp => _protocolState.Exp;
+	public string RoleName => RoleConfigRepository.ResolveDisplayName(Role);
+	public uint AppearanceModelId => ResolveAppearanceModelId();
+	public byte SpaceLine => _protocolState.SpaceLine;
+	public uint SpaceUtype => _protocolState.SpaceUtype;
 	public WorldEntityKind EntityKind => WorldEntityKind.Player;
 	public bool IsTeammate => false;
-	public string DisplayName => string.IsNullOrWhiteSpace(name) ? $"Player {id}" : name;
-	public string SecondaryInfoText => WorldEntityNameplateText.BuildCombatMotionLine(HitPoints, ManaPoints, RawMoveSpeed);
+	public string DisplayName => _protocolState.DisplayName;
+	public string SecondaryInfoText => WorldEntityNameplateText.BuildPlayerLine(HitPoints, ManaPoints, Attack, Defense, RawMoveSpeed, Exp);
 	public bool ShowSecondaryInfo => true;
-	public ulong HitPoints => combat != null ? combat.hp : 0UL;
-	public ulong ManaPoints => combat != null ? combat.mp : 0UL;
-	public byte RawMoveSpeed => motion != null ? motion.moveSpeed : (byte)0;
-	public float MoveSpeedUnits => Mathf.Max(0.1f, RawMoveSpeed / 10.0f);
-	public Vector3 WorldPosition => new Vector3(position.x, position.y, position.z);
-	public Vector3 WorldRotationDegrees => WorldEntityRotationMapping.ToGodotRotationDegrees(direction);
+	public ulong HitPoints => _protocolState.Combat.HitPoints;
+	public ulong ManaPoints => _protocolState.Combat.ManaPoints;
+	public uint Attack => _protocolState.Combat.Attack;
+	public uint Defense => _protocolState.Combat.Defense;
+	public byte RawMoveSpeed => _protocolState.Motion.RawMoveSpeed;
+
+	public void AttackTarget(int targetEntityId)
+	{
+		if (cellEntityCall is EntityCellEntityCall_PlayerBase cellCall)
+		{
+			cellCall.attack_target(targetEntityId);
+		}
+	}
+	public float MoveSpeedUnits => _protocolState.Motion.MoveSpeedUnits;
+	public Vector3 WorldPosition => _protocolState.WorldPosition;
+	public Vector3 WorldRotationDegrees => _protocolState.WorldRotationDegrees;
 	public bool UsePlanarRotation => true;
 
 	public override void __init__()
 	{
 		base.__init__();
-		SyncServerTimeAnchor(server_time);
+		SyncServerTimeAnchor(_protocolState.RawServerTime);
 		_renderBinding.Initialize();
 	}
 
@@ -67,12 +85,6 @@ public class Player : PlayerBase, ILocallyControlledWorldEntity, IWorldEntityRen
 		if (IsLocalPlayer)
 		{
 			LocalPlayer = this;
-		}
-
-		if (World.Instance == null)
-		{
-			_renderBinding.EnterWorld(IsLocalPlayer ? NotifyLocalPlayerEnterWorldRequested : null);
-			return;
 		}
 
 		_renderBinding.EnterWorld();
@@ -112,7 +124,7 @@ public class Player : PlayerBase, ILocallyControlledWorldEntity, IWorldEntityRen
 
 	public override void onServer_timeChanged(ulong oldValue)
 	{
-		SyncServerTimeAnchor(server_time);
+		SyncServerTimeAnchor(_protocolState.RawServerTime);
 		RefreshRenderInfo();
 	}
 
@@ -122,6 +134,26 @@ public class Player : PlayerBase, ILocallyControlledWorldEntity, IWorldEntityRen
 	}
 
 	public override void onSpace_lineChanged(byte oldValue)
+	{
+		RefreshRenderInfo();
+	}
+
+	public override void onLevelChanged(ushort oldValue)
+	{
+		RefreshRenderInfo();
+	}
+
+	public override void onExpChanged(uint oldValue)
+	{
+		RefreshRenderInfo();
+	}
+
+	public override void onRole_typeChanged(byte oldValue)
+	{
+		RefreshRenderInfo();
+	}
+
+	public override void onSexChanged(byte oldValue)
 	{
 		RefreshRenderInfo();
 	}
@@ -168,8 +200,7 @@ public class Player : PlayerBase, ILocallyControlledWorldEntity, IWorldEntityRen
 			return;
 		}
 
-		position = worldPosition;
-		direction = WorldEntityRotationMapping.ToKbeDirection(worldRotationDegrees);
+		_protocolState.SetWorldTransform(worldPosition, worldRotationDegrees);
 
 		_lastSyncedWorldPosition = worldPosition;
 		_lastSyncedWorldRotationDegrees = worldRotationDegrees;
@@ -208,14 +239,24 @@ public class Player : PlayerBase, ILocallyControlledWorldEntity, IWorldEntityRen
 			|| Mathf.Abs(Mathf.AngleDifference(previousRotation.Z, currentRotation.Z)) > RotationSyncEpsilonDegrees;
 	}
 
-	private static void NotifyLocalPlayerEnterWorldRequested()
+	private uint ResolveAppearanceModelId()
 	{
-		OnLocalPlayerEnterWorldRequested?.Invoke();
+		if (SexConfigRepository.TryGetBySex(Sex, out var sexEntry))
+		{
+			return sexEntry.ModelId;
+		}
+
+		if (IsLocalPlayer && CharacterCreationState.Current.ModelId != 0U)
+		{
+			return CharacterCreationState.Current.ModelId;
+		}
+
+		return PlayerAppearanceConfigRepository.DefaultModelId;
 	}
 
 	private ulong GetCurrentServerTime()
 	{
-		SyncServerTimeAnchor(server_time);
+		SyncServerTimeAnchor(_protocolState.RawServerTime);
 		if (!_hasServerTimeAnchor)
 		{
 			return 0UL;
@@ -267,7 +308,7 @@ public class Player : PlayerBase, ILocallyControlledWorldEntity, IWorldEntityRen
 			var serverTime = rawServerTime >= MillisecondsThreshold
 				? DateTimeOffset.FromUnixTimeMilliseconds((long)rawServerTime)
 				: DateTimeOffset.FromUnixTimeSeconds((long)rawServerTime);
-			return serverTime.LocalDateTime.ToString("yyyy-MM-dd HH-mm-ss");
+			return serverTime.LocalDateTime.ToString("yyyy-MM-dd HH:mm:ss");
 		}
 		catch (ArgumentOutOfRangeException)
 		{

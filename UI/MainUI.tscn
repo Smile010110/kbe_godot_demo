@@ -29,21 +29,21 @@ theme_override_constants/separation = 12
 
 [node name="TitleLabel" type="Label" parent="CenterContainer/Panel/VBox"]
 layout_mode = 2
-text = "KBEngine Login"
+text = "KBEngine 登录"
 horizontal_alignment = 1
 
 [node name="HintLabel" type="Label" parent="CenterContainer/Panel/VBox"]
 layout_mode = 2
-text = "Current protocol uses Player with Motion and Combat components."
+text = "当前协议使用 Player 实体，并挂接 Motion 与 Combat 组件。"
 autowrap_mode = 3
 
 [node name="UserNameEdit" type="LineEdit" parent="CenterContainer/Panel/VBox"]
 layout_mode = 2
-placeholder_text = "Username"
+placeholder_text = "请输入账号"
 
 [node name="PasswordEdit" type="LineEdit" parent="CenterContainer/Panel/VBox"]
 layout_mode = 2
-placeholder_text = "Password"
+placeholder_text = "请输入密码"
 secret = true
 
 [node name="NameRow" type="HBoxContainer" parent="CenterContainer/Panel/VBox"]
@@ -53,25 +53,129 @@ theme_override_constants/separation = 8
 [node name="NameEdit" type="LineEdit" parent="CenterContainer/Panel/VBox/NameRow"]
 layout_mode = 2
 size_flags_horizontal = 3
-placeholder_text = "Display Name"
+placeholder_text = "请输入昵称"
 
 [node name="RandomNameBtn" type="Button" parent="CenterContainer/Panel/VBox/NameRow"]
 layout_mode = 2
-text = "Random"
+text = "随机"
 
 [node name="RememberLoginCheckBox" type="CheckBox" parent="CenterContainer/Panel/VBox"]
 layout_mode = 2
-text = "Remember last login"
+text = "记住上次登录信息"
+
+[node name="CreateRoleBtn" type="Button" parent="CenterContainer/Panel/VBox"]
+layout_mode = 2
+text = "创建角色"
+
+[node name="CreateRoleSummaryLabel" type="Label" parent="CenterContainer/Panel/VBox"]
+layout_mode = 2
+text = "尚未创建角色。"
+autowrap_mode = 3
 
 [node name="LoginBtn" type="Button" parent="CenterContainer/Panel/VBox"]
 layout_mode = 2
-text = "Login"
+text = "登录"
 
 [node name="StatusLabel" type="Label" parent="CenterContainer/Panel/VBox"]
 layout_mode = 2
-text = "Initializing..."
+text = "正在初始化..."
 autowrap_mode = 3
+
+[node name="CreateRoleOverlay" type="Control" parent="."]
+visible = false
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="Backdrop" type="ColorRect" parent="CreateRoleOverlay"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0, 0, 0, 0.6)
+
+[node name="CenterContainer" type="CenterContainer" parent="CreateRoleOverlay"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Panel" type="PanelContainer" parent="CreateRoleOverlay/CenterContainer"]
+custom_minimum_size = Vector2(460, 0)
+layout_mode = 2
+
+[node name="VBox" type="VBoxContainer" parent="CreateRoleOverlay/CenterContainer/Panel"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="TitleLabel" type="Label" parent="CreateRoleOverlay/CenterContainer/Panel/VBox"]
+layout_mode = 2
+text = "创建角色"
+horizontal_alignment = 1
+
+[node name="HintLabel" type="Label" parent="CreateRoleOverlay/CenterContainer/Panel/VBox"]
+layout_mode = 2
+text = "登录前请先选择职业、性别并设置昵称。"
+autowrap_mode = 3
+
+[node name="CreateNameRow" type="HBoxContainer" parent="CreateRoleOverlay/CenterContainer/Panel/VBox"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="CreateNameEdit" type="LineEdit" parent="CreateRoleOverlay/CenterContainer/Panel/VBox/CreateNameRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "请输入角色昵称"
+
+[node name="CreateRandomNameBtn" type="Button" parent="CreateRoleOverlay/CenterContainer/Panel/VBox/CreateNameRow"]
+layout_mode = 2
+text = "随机"
+
+[node name="RoleLabel" type="Label" parent="CreateRoleOverlay/CenterContainer/Panel/VBox"]
+layout_mode = 2
+text = "职业"
+
+[node name="RoleOptionButton" type="OptionButton" parent="CreateRoleOverlay/CenterContainer/Panel/VBox"]
+layout_mode = 2
+
+[node name="SexLabel" type="Label" parent="CreateRoleOverlay/CenterContainer/Panel/VBox"]
+layout_mode = 2
+text = "性别"
+
+[node name="SexOptionButton" type="OptionButton" parent="CreateRoleOverlay/CenterContainer/Panel/VBox"]
+layout_mode = 2
+
+[node name="ModelIdLabel" type="Label" parent="CreateRoleOverlay/CenterContainer/Panel/VBox"]
+layout_mode = 2
+text = "模型ID：-"
+autowrap_mode = 3
+
+[node name="ActionRow" type="HBoxContainer" parent="CreateRoleOverlay/CenterContainer/Panel/VBox"]
+layout_mode = 2
+alignment = 2
+theme_override_constants/separation = 8
+
+[node name="CancelBtn" type="Button" parent="CreateRoleOverlay/CenterContainer/Panel/VBox/ActionRow"]
+layout_mode = 2
+text = "取消"
+
+[node name="ConfirmBtn" type="Button" parent="CreateRoleOverlay/CenterContainer/Panel/VBox/ActionRow"]
+layout_mode = 2
+text = "确认"
 
 [connection signal="button_up" from="CenterContainer/Panel/VBox/NameRow/RandomNameBtn" to="." method="_on_random_name_btn_button_up"]
 [connection signal="toggled" from="CenterContainer/Panel/VBox/RememberLoginCheckBox" to="." method="_on_remember_login_check_box_toggled"]
+[connection signal="button_up" from="CenterContainer/Panel/VBox/CreateRoleBtn" to="." method="_on_create_role_btn_button_up"]
 [connection signal="button_up" from="CenterContainer/Panel/VBox/LoginBtn" to="." method="_on_login_btn_button_up"]
+[connection signal="button_up" from="CreateRoleOverlay/CenterContainer/Panel/VBox/CreateNameRow/CreateRandomNameBtn" to="." method="_on_create_random_name_btn_button_up"]
+[connection signal="item_selected" from="CreateRoleOverlay/CenterContainer/Panel/VBox/SexOptionButton" to="." method="_on_create_sex_option_button_item_selected"]
+[connection signal="button_up" from="CreateRoleOverlay/CenterContainer/Panel/VBox/ActionRow/CancelBtn" to="." method="_on_create_role_cancel_btn_button_up"]
+[connection signal="button_up" from="CreateRoleOverlay/CenterContainer/Panel/VBox/ActionRow/ConfirmBtn" to="." method="_on_create_role_confirm_btn_button_up"]
