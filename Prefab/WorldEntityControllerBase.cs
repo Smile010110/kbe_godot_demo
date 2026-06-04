@@ -1,6 +1,7 @@
 using Godot;
 
 public abstract partial class WorldEntityControllerBase<TEntity> : Node3D, IWorldEntityController<TEntity>
+	, ISelectableWorldEntityController
 	where TEntity : class, IWorldEntityView
 {
 	[Export]
@@ -18,6 +19,8 @@ public abstract partial class WorldEntityControllerBase<TEntity> : Node3D, IWorl
 	protected CharacterBody3D CharacterBody { get; private set; }
 	protected Label3D NameLabel { get; private set; }
 	protected Label3D InfoLabel { get; private set; }
+	public IWorldEntityView SelectedEntityView => EntityView;
+	public CharacterBody3D SelectionBody => CharacterBody;
 
 	private Vector3 _targetPosition;
 	private bool _isReady;

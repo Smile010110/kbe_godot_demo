@@ -22,6 +22,7 @@ public partial class App : GodotKBEMain
 		Instance = this;
 		RoleConfigRepository.Warmup();
 		SexConfigRepository.Warmup();
+		SkillConfigRepository.Warmup();
 		PlayerAppearanceConfigRepository.Warmup();
 		KBELog.Init(new GodotLogProvider());
 		ip = GameConfig.KbEngineHost;

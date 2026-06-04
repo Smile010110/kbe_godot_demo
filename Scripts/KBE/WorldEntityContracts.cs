@@ -40,3 +40,9 @@ public interface IWorldEntityController<TEntity> where TEntity : class
 	void SetHeadInfo();
 	void UpdateFromEntity();
 }
+
+public interface ISelectableWorldEntityController
+{
+	IWorldEntityView SelectedEntityView { get; }
+	CharacterBody3D SelectionBody { get; }
+}

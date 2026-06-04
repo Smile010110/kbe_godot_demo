@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+using CommonData;
 using Godot;
 
 public partial class WorldUi : Control
@@ -6,10 +8,12 @@ public partial class WorldUi : Control
 	private Panel _targetInfoPanel;
 	private Label _targetNameLabel;
 	private Label _targetHpLabel;
+	private HBoxContainer _skillButtonContainer;
+	private readonly Dictionary<Button, SkillConfigEntry> _skillButtons = new();
 	private double _refreshAccumulator;
 	private string _lastInfoText = string.Empty;
 
-	private MonsterController _cachedTarget;
+	private ISelectableWorldEntityController _cachedTarget;
 	private string _lastTargetName = string.Empty;
 	private string _lastTargetHpText = string.Empty;
 
@@ -19,7 +23,10 @@ public partial class WorldUi : Control
 		_targetInfoPanel = GetNode<Panel>("TargetInfoPanel");
 		_targetNameLabel = GetNode<Label>("TargetInfoPanel/TargetNameLabel");
 		_targetHpLabel = GetNode<Label>("TargetInfoPanel/TargetHPLabel");
+		_skillButtonContainer = GetNode<HBoxContainer>("SkillBarPanel/SkillButtonContainer");
+		PopulateSkillButtons();
 		RefreshHud(force: true);
+		RefreshSkillButtons();
 	}
 
 	public override void _Process(double delta)
@@ -33,6 +40,58 @@ public partial class WorldUi : Control
 		_refreshAccumulator = 0.0d;
 		RefreshHud();
 		RefreshTargetInfo();
+		RefreshSkillButtons();
+	}
+
+	private void PopulateSkillButtons()
+	{
+		foreach (Node child in _skillButtonContainer.GetChildren())
+		{
+			_skillButtonContainer.RemoveChild(child);
+			child.QueueFree();
+		}
+
+		_skillButtons.Clear();
+
+		var skills = new List<SkillConfigEntry>(SkillConfigRepository.Datas.Values);
+		skills.Sort((left, right) => left.Id.CompareTo(right.Id));
+		foreach (var skill in skills)
+		{
+			var skillId = skill.Id;
+			var button = new Button
+			{
+				Text = $"{skill.Id}. {skill.DisplayName}",
+				TooltipText = BuildSkillTooltip(skill),
+				CustomMinimumSize = new Vector2(112.0f, 42.0f),
+				FocusMode = FocusModeEnum.None,
+			};
+
+			button.Pressed += () => PlayerController.LocalInstance?.TryCastSelectedTargetSkill(skillId);
+			_skillButtonContainer.AddChild(button);
+			_skillButtons[button] = skill;
+		}
+	}
+
+	private static string BuildSkillTooltip(SkillConfigEntry skill)
+	{
+		var effectText = skill.IsHealSkill ? "治疗" : "伤害";
+		return $"MP {skill.CostMp} | CD {skill.CooldownSeconds:0.#}s | Delay {skill.CastDelaySeconds:0.##}s | Range {skill.RangeMax:0.#} | {effectText} x{skill.EffectValue:0.#}";
+	}
+
+	private void RefreshSkillButtons()
+	{
+		var playerController = PlayerController.LocalInstance;
+		var hasLocalPlayer = playerController?.Player != null;
+		foreach (var pair in _skillButtons)
+		{
+			var button = pair.Key;
+			var skill = pair.Value;
+			var cooldownRemaining = playerController?.GetDisplayCooldownRemaining(skill) ?? 0.0f;
+			button.Text = cooldownRemaining > 0.0f
+				? $"{skill.Id}. {skill.DisplayName} ({cooldownRemaining:0.0})"
+				: $"{skill.Id}. {skill.DisplayName}";
+			button.Disabled = !hasLocalPlayer || cooldownRemaining > 0.0f || playerController?.IsSkillCastLocked == true;
+		}
 	}
 
 	private void RefreshHud(bool force = false)
@@ -54,8 +113,9 @@ public partial class WorldUi : Control
 			: "-";
 		var animationState = playerController != null ? playerController.CurrentAnimationStateName : "-";
 		var animationKey = playerController != null ? playerController.CurrentAnimationKey : "-";
+		var skillCast = playerController != null ? playerController.LastSkillCastSummary : "-";
 
-		var nextInfoText = $"WASD move\nSpace jump\nHold RMB to rotate camera\nEntity: {entityId}\nDBID: {dbid}\nServer: {serverId}\nServerTime: {serverTime}\nSpaceUType: {spaceUtype}\nSpaceLine: {spaceLine}\nPosition: {positionText}\nMoveSpeed: {moveSpeed}\nHP: {hp}\nMP: {mp}\nAnimState: {animationState}\nAnimKey: {animationKey}";
+		var nextInfoText = $"WASD move\nSpace jump\nHold RMB to rotate camera\nEntity: {entityId}\nDBID: {dbid}\nServer: {serverId}\nServerTime: {serverTime}\nSpaceUType: {spaceUtype}\nSpaceLine: {spaceLine}\nPosition: {positionText}\nMoveSpeed: {moveSpeed}\nHP: {hp}\nMP: {mp}\nAnimState: {animationState}\nAnimKey: {animationKey}\nSkillCast: {skillCast}";
 		if (!force && string.Equals(_lastInfoText, nextInfoText, System.StringComparison.Ordinal))
 		{
 			return;
@@ -68,7 +128,7 @@ public partial class WorldUi : Control
 	private void RefreshTargetInfo()
 	{
 		var target = PlayerController.LocalInstance?.SelectedTarget;
-		if (target == null || !IsInstanceValid(target))
+		if (target == null || target is not GodotObject targetObject || !IsInstanceValid(targetObject))
 		{
 			if (_targetInfoPanel.Visible)
 			{
@@ -86,14 +146,16 @@ public partial class WorldUi : Control
 			_lastTargetHpText = string.Empty;
 		}
 
-		var monster = target.Monster;
-		if (monster == null)
+		var entity = target.SelectedEntityView;
+		if (entity == null)
 		{
 			return;
 		}
 
-		var name = monster.DisplayName ?? "???";
-		var hpText = $"HP {monster.HitPoints} / MP {monster.ManaPoints}";
+		var name = entity.DisplayName ?? "???";
+		var hpText = entity.EntityKind == WorldEntityKind.Npc
+			? (string.IsNullOrWhiteSpace(entity.SecondaryInfoText) ? "NPC" : entity.SecondaryInfoText)
+			: $"HP {entity.HitPoints} / MP {entity.ManaPoints}";
 
 		if (!_targetInfoPanel.Visible)
 		{

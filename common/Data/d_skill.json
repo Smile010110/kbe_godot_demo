@@ -1,0 +1,48 @@
+{
+  "allDatas": {
+    "skillData": {
+      "1001": {
+        "id": 1001,
+        "name": "普通攻击",
+        "skill_type": 1,
+        "cast_type": 1,
+        "cost_mp": 0,
+        "cooldown": 1000,
+        "gcd_group": 1,
+        "range_max": 2.0,
+        "target_type": 1,
+        "effect_type": 1,
+        "effect_value": 1.0,
+        "cast_delay_ms": 350
+      },
+      "1002": {
+        "id": 1002,
+        "name": "强击",
+        "skill_type": 1,
+        "cast_type": 1,
+        "cost_mp": 15,
+        "cooldown": 3000,
+        "gcd_group": 1,
+        "range_max": 2.0,
+        "target_type": 1,
+        "effect_type": 1,
+        "effect_value": 2.0,
+        "cast_delay_ms": 600
+      },
+      "1003": {
+        "id": 1003,
+        "name": "治愈",
+        "skill_type": 1,
+        "cast_type": 1,
+        "cost_mp": 20,
+        "cooldown": 5000,
+        "gcd_group": 1,
+        "range_max": 10.0,
+        "target_type": 2,
+        "effect_type": 2,
+        "effect_value": 1.5,
+        "cast_delay_ms": 500
+      }
+    }
+  }
+}

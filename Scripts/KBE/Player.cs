@@ -59,13 +59,27 @@ public class Player : PlayerBase, ILocallyControlledWorldEntity, IWorldEntityRen
 	public uint Defense => _protocolState.Combat.Defense;
 	public byte RawMoveSpeed => _protocolState.Motion.RawMoveSpeed;
 
-	public void AttackTarget(int targetEntityId)
+	public event Action<SkillCastResult> SkillResultReceived;
+	public event Action<SkillCastError> SkillErrorReceived;
+
+	public bool TryCastSkill(int skillId, ulong targetEntityId, string extData = "")
 	{
-		if (cellEntityCall is EntityCellEntityCall_PlayerBase cellCall)
+		if (skillId < 0)
 		{
-			cellCall.attack_target(targetEntityId);
+			GD.PushWarning($"Invalid skill id: {skillId}");
+			return false;
 		}
+
+		if (cellEntityCall?.skill == null)
+		{
+			GD.PushWarning($"Cannot cast skill without SkillComponent cell call. skill={skillId}");
+			return false;
+		}
+
+		cellEntityCall.skill.cast_skill((uint)skillId, targetEntityId, extData ?? string.Empty);
+		return true;
 	}
+
 	public float MoveSpeedUnits => _protocolState.Motion.MoveSpeedUnits;
 	public Vector3 WorldPosition => _protocolState.WorldPosition;
 	public Vector3 WorldRotationDegrees => _protocolState.WorldRotationDegrees;
@@ -143,12 +157,7 @@ public class Player : PlayerBase, ILocallyControlledWorldEntity, IWorldEntityRen
 		RefreshRenderInfo();
 	}
 
-	public override void onExpChanged(uint oldValue)
-	{
-		RefreshRenderInfo();
-	}
-
-	public override void onRole_typeChanged(byte oldValue)
+	public override void onRoleChanged(byte oldValue)
 	{
 		RefreshRenderInfo();
 	}
@@ -191,6 +200,18 @@ public class Player : PlayerBase, ILocallyControlledWorldEntity, IWorldEntityRen
 		{
 			RefreshRenderTransform();
 		}
+	}
+
+	public void HandleSkillResult(SkillCastResult skillCast)
+	{
+		SkillResultReceived?.Invoke(skillCast);
+		RefreshRenderInfo();
+	}
+
+	public void HandleSkillError(SkillCastError error)
+	{
+		SkillErrorReceived?.Invoke(error);
+		RefreshRenderInfo();
 	}
 
 	public void ApplyLocalTransform(Vector3 worldPosition, Vector3 worldRotationDegrees)

@@ -23,6 +23,8 @@ public partial class PlayerController : WorldEntityControllerBase<Player>
 		JumpIdle,
 		JumpMove,
 		Attack,
+		HeavyAttack,
+		Cast,
 	}
 
 	private const string PlayerModelPath = "PlayerCharacterBody3D/PlayerModel";
@@ -31,6 +33,13 @@ public partial class PlayerController : WorldEntityControllerBase<Player>
 	private const float DirectionSelectionThreshold = 0.35f;
 	private const float SelectionRayLength = 1000.0f;
 	private const float SelectionRingYOffset = 0.08f;
+	private const float SelectionRingDefaultInnerRadius = 0.62f;
+	private const float SelectionRingThickness = 0.10f;
+	private const float SelectionRingGroundRayStartHeight = 2.0f;
+	private const float SelectionRingGroundRayLength = 8.0f;
+	private const int SelectionRingSegments = 96;
+	private const float GlobalCooldownSeconds = 1.5f;
+	private const float FloatingSkillTextLifetimeSeconds = 0.85f;
 
 	private static readonly Dictionary<uint, PlayerAnimationRuntimeSet> s_sharedAnimationRuntimeSets = new();
 
@@ -46,13 +55,19 @@ public partial class PlayerController : WorldEntityControllerBase<Player>
 	public float AttackCooldownSeconds = 0.6f;
 	[Export]
 	public float AttackRange = 4.0f;
+	[Export]
+	public int DefaultTargetSkillId = 1001;
+	[Export]
+	public float SkillCastAckTimeoutSeconds = 1.5f;
 
 	public static PlayerController LocalInstance { get; private set; }
 
 	public Player Player => EntityView;
 	public string CurrentAnimationKey => _currentAnimationKey;
 	public string CurrentAnimationStateName => _currentAnimationStateName;
-	public MonsterController SelectedTarget { get; private set; }
+	public string LastSkillCastSummary => _lastSkillCastSummary;
+	public bool IsSkillCastLocked => _isSkillCastPending;
+	public ISelectableWorldEntityController SelectedTarget { get; private set; }
 
 	private Node3D _cameraPivot;
 	private Camera3D _camera;
@@ -68,6 +83,16 @@ public partial class PlayerController : WorldEntityControllerBase<Player>
 	private PlayerAppearanceProfile _currentAppearanceProfile;
 	private PlayerAnimationRuntimeSet _currentAnimationRuntimeSet;
 	private float _attackCooldownRemaining;
+	private float _globalSkillCooldownRemaining;
+	private readonly Dictionary<int, float> _skillCooldowns = new();
+	private bool _isSkillCastPending;
+	private float _skillCastAckTimeoutRemaining;
+	private int _pendingSkillId;
+	private ulong _pendingSkillTargetId;
+	private float _pendingSkillImpactRemaining;
+	private float _skillAnimationLockRemaining;
+	private SkillCastResult _queuedSkillResult;
+	private string _lastSkillCastSummary = "-";
 	private MeshInstance3D _selectionRing;
 
 	protected override string CharacterBodyPath => "PlayerCharacterBody3D";
@@ -76,12 +101,31 @@ public partial class PlayerController : WorldEntityControllerBase<Player>
 
 	public override void BindEntity(Player entity)
 	{
+		if (Player != null)
+		{
+			Player.SkillResultReceived -= OnSkillResultReceived;
+			Player.SkillErrorReceived -= OnSkillErrorReceived;
+		}
+
 		base.BindEntity(entity);
+
+		if (Player != null)
+		{
+			Player.SkillResultReceived += OnSkillResultReceived;
+			Player.SkillErrorReceived += OnSkillErrorReceived;
+		}
+
 		EnsureAppearanceProfileApplied(force: true);
 	}
 
 	public override void _ExitTree()
 	{
+		if (Player != null)
+		{
+			Player.SkillResultReceived -= OnSkillResultReceived;
+			Player.SkillErrorReceived -= OnSkillErrorReceived;
+		}
+
 		if (ReferenceEquals(LocalInstance, this))
 		{
 			LocalInstance = null;
@@ -113,36 +157,53 @@ public partial class PlayerController : WorldEntityControllerBase<Player>
 			&& mouseButton.ButtonIndex == MouseButton.Left
 			&& mouseButton.Pressed)
 		{
-			GD.Print($"[TargetSelect] Guards passed, searching at {mouseButton.Position}...");
-			var monsterController = FindMonsterAtScreenPosition(mouseButton.Position);
-			if (monsterController == null)
+			if (IsPointerOverUi())
 			{
-				GD.Print("[TargetSelect] No monster found, clearing selection.");
+				return;
+			}
+
+			GD.Print($"[TargetSelect] Guards passed, searching at {mouseButton.Position}...");
+			var targetController = FindSelectableTargetAtScreenPosition(mouseButton.Position);
+			if (targetController == null)
+			{
+				GD.Print("[TargetSelect] No selectable target found, clearing selection.");
 				ClearSelection();
 				return;
 			}
 
-			if (ReferenceEquals(monsterController, SelectedTarget))
+			if (ReferenceEquals(targetController, SelectedTarget))
 			{
 				GD.Print("[TargetSelect] Same target already selected.");
 				return;
 			}
 
 			ClearSelection();
-			SelectTarget(monsterController);
+			SelectTarget(targetController);
 		}
 	}
 
-	private void SelectTarget(MonsterController target)
+	private bool IsPointerOverUi()
 	{
+		var viewport = GetViewport();
+		return viewport?.GuiGetHoveredControl() != null;
+	}
+
+	private void SelectTarget(ISelectableWorldEntityController target)
+	{
+		var body = GetTargetBody(target);
+		if (body == null)
+		{
+			return;
+		}
+
 		SelectedTarget = target;
-		_selectionRing = CreateSelectionRing();
+		_selectionRing = CreateSelectionRing(ResolveSelectionRingInnerRadius(body));
 		_selectionRing.Name = "SelectionRing";
 
-		World.Instance.AddChild(_selectionRing);
+		body.AddChild(_selectionRing);
 		UpdateSelectionRingPosition();
 
-		GD.Print($"[TargetSelect] Selected monster: {target.Name}");
+		GD.Print($"[TargetSelect] Selected target: {target.SelectedEntityView?.DisplayName}");
 	}
 
 	private void ClearSelection()
@@ -159,6 +220,16 @@ public partial class PlayerController : WorldEntityControllerBase<Player>
 		SelectedTarget = null;
 	}
 
+	private bool IsSelectedTargetValid()
+	{
+		return SelectedTarget is GodotObject targetObject && IsInstanceValid(targetObject);
+	}
+
+	private MonsterController GetSelectedMonsterController()
+	{
+		return SelectedTarget as MonsterController;
+	}
+
 	private void UpdateSelectionRingPosition()
 	{
 		if (_selectionRing == null || !IsInstanceValid(_selectionRing) || SelectedTarget == null)
@@ -166,47 +237,424 @@ public partial class PlayerController : WorldEntityControllerBase<Player>
 			return;
 		}
 
-		var body = SelectedTarget.GetNodeOrNull<CharacterBody3D>("MonsterCharacterBody3D");
+		var body = GetTargetBody(SelectedTarget);
 		if (body == null)
 		{
 			return;
 		}
 
-		var bodyPos = body.GlobalPosition;
-		_selectionRing.GlobalPosition = new Vector3(bodyPos.X, bodyPos.Y - 0.98f, bodyPos.Z);
-		_selectionRing.GlobalRotationDegrees = new Vector3(90f, 0f, 0f);
+		_selectionRing.GlobalPosition = ResolveSelectionRingPosition(body);
+		_selectionRing.GlobalRotationDegrees = Vector3.Zero;
 	}
 
 	public void TryAttack()
+	{
+		TryCastSelectedTargetSkill(DefaultTargetSkillId);
+	}
+
+	public void TryCastSelectedTargetSkill(int skillId)
 	{
 		if (Player == null || !Player.IsLocalPlayer)
 		{
 			return;
 		}
 
-		if (SelectedTarget == null || !IsInstanceValid(SelectedTarget))
-		{
-			ClearSelection();
-			return;
-		}
-
-		if (_attackCooldownRemaining > 0f)
+		if (_isSkillCastPending)
 		{
 			return;
 		}
 
-		var targetEntityId = SelectedTarget.Monster?.EntityId ?? -1;
-		if (targetEntityId <= 0)
+		if (skillId < 0)
 		{
+			GD.PushWarning($"Invalid skill id: {skillId}");
 			return;
 		}
 
-		Player.AttackTarget(targetEntityId);
-		_attackCooldownRemaining = AttackCooldownSeconds;
-		PlayAnimationForState(PlayerAnimationState.Attack, force: true);
+		var skillConfig = ResolveSkillConfig(skillId);
+		if (skillConfig == null)
+		{
+			SetLocalSkillMessage($"技能不存在: {skillId}");
+			return;
+		}
+
+		if (!IsSkillCooldownReady(skillConfig))
+		{
+			SetLocalSkillMessage(SkillCastError.ResolveMessage(SkillErrorCode.CooldownNotReady));
+			return;
+		}
+
+		if (Player.ManaPoints < (ulong)skillConfig.CostMp)
+		{
+			SetLocalSkillMessage(SkillCastError.ResolveMessage(SkillErrorCode.NotEnoughMp));
+			return;
+		}
+
+		var targetEntityId = ResolveSkillCastTargetEntityId(skillConfig);
+		if (!IsValidSkillCastTarget(skillConfig, targetEntityId))
+		{
+			SetLocalSkillMessage(SkillCastError.ResolveMessage(SkillErrorCode.InvalidTarget));
+			return;
+		}
+
+		if (skillConfig != null && !IsSkillTargetInRange(skillConfig, targetEntityId))
+		{
+			SetLocalSkillMessage(SkillCastError.ResolveMessage(SkillErrorCode.OutOfRange));
+			GD.Print($"[SkillCast] Target out of range. skill={skillConfig.DisplayName} range={skillConfig.RangeMax:0.##}");
+			return;
+		}
+
+		_pendingSkillId = skillId;
+		_pendingSkillTargetId = targetEntityId;
+		if (!Player.TryCastSkill(_pendingSkillId, targetEntityId))
+		{
+			_pendingSkillTargetId = 0UL;
+			SetLocalSkillMessage("技能请求发送失败");
+			return;
+		}
+
+		StartLocalSkillCooldown(skillConfig);
+		SetLocalSkillMessage($"释放 {skillConfig.DisplayName}");
+		StartLocalSkillCast(skillConfig);
 	}
 
-	private MonsterController FindMonsterAtScreenPosition(Vector2 screenPosition)
+	public float GetSkillCooldownRemaining(int skillId)
+	{
+		if (!_skillCooldowns.TryGetValue(skillId, out var skillCooldown))
+		{
+			return 0.0f;
+		}
+
+		return Mathf.Max(0.0f, skillCooldown);
+	}
+
+	public float GetDisplayCooldownRemaining(SkillConfigEntry skillConfig)
+	{
+		if (skillConfig == null)
+		{
+			return 0.0f;
+		}
+
+		var skillCooldown = GetSkillCooldownRemaining(skillConfig.Id);
+		var globalCooldown = skillConfig.UsesGlobalCooldown ? _globalSkillCooldownRemaining : 0.0f;
+		return Mathf.Max(skillCooldown, globalCooldown);
+	}
+
+	private void OnSkillResultReceived(SkillCastResult skillCast)
+	{
+		if (Player == null || skillCast == null)
+		{
+			return;
+		}
+
+		if (Player.IsLocalPlayer && skillCast.CasterId == (ulong)Player.EntityId)
+		{
+			if (_isSkillCastPending && skillCast.SkillId != _pendingSkillId)
+			{
+				GD.PushWarning($"Ignored skill result. expected={_pendingSkillId}, actual={skillCast.SkillId}");
+				return;
+			}
+
+			if (_pendingSkillImpactRemaining > 0.0f)
+			{
+				_queuedSkillResult = skillCast;
+				return;
+			}
+
+			CompleteLocalSkillCast();
+		}
+
+		ApplySkillResultPresentation(skillCast);
+	}
+
+	private static string BuildSkillCastSummary(SkillCastResult skillCast)
+	{
+		if (skillCast == null)
+		{
+			return "-";
+		}
+
+		var effectText = skillCast.EffectType == SkillEffectType.Heal ? "Heal" : "Damage";
+		var killText = skillCast.IsKill ? " Kill" : string.Empty;
+		return $"Skill {skillCast.SkillId} {effectText} {skillCast.Value} caster={skillCast.CasterId} target={skillCast.TargetId}{killText}";
+	}
+
+	private void OnSkillErrorReceived(SkillCastError error)
+	{
+		if (error == null)
+		{
+			return;
+		}
+
+		if (error.ErrorCode == SkillErrorCode.Casting)
+		{
+			if (!_isSkillCastPending)
+			{
+				SetLocalSkillMessage(error.Message);
+			}
+			return;
+		}
+
+		if (_isSkillCastPending && error.SkillId == _pendingSkillId)
+		{
+			CancelLocalSkillCast();
+		}
+
+		if (error.ErrorCode == SkillErrorCode.CooldownNotReady)
+		{
+			if (ResolveSkillConfig(error.SkillId) is SkillConfigEntry skillConfig)
+			{
+				StartLocalSkillCooldown(skillConfig);
+			}
+		}
+		else
+		{
+			ClearLocalSkillCooldown(error.SkillId);
+		}
+
+		SetLocalSkillMessage(error.Message);
+		GD.PushWarning($"[SkillError] skill={error.SkillId} code={(byte)error.ErrorCode} message={error.Message}");
+	}
+
+	private static PlayerAnimationState ResolveSkillAnimationState(int skillId)
+	{
+		return skillId switch
+		{
+			1002 => PlayerAnimationState.HeavyAttack,
+			1003 => PlayerAnimationState.Cast,
+			_ => PlayerAnimationState.Attack,
+		};
+	}
+
+	private void StartLocalSkillCast(SkillConfigEntry skillConfig)
+	{
+		if (skillConfig == null)
+		{
+			return;
+		}
+
+		var castDelaySeconds = Mathf.Max(skillConfig.CastDelaySeconds, 0.05f);
+		_isSkillCastPending = true;
+		_skillCastAckTimeoutRemaining = Mathf.Max(SkillCastAckTimeoutSeconds, castDelaySeconds + 1.0f);
+		_pendingSkillImpactRemaining = castDelaySeconds;
+		_skillAnimationLockRemaining = castDelaySeconds;
+		_queuedSkillResult = null;
+		PlaySkillAnimation(skillConfig);
+	}
+
+	private void CompleteLocalSkillCast()
+	{
+		_isSkillCastPending = false;
+		_skillCastAckTimeoutRemaining = 0.0f;
+		_pendingSkillImpactRemaining = 0.0f;
+		_pendingSkillTargetId = 0;
+		_queuedSkillResult = null;
+	}
+
+	private void CancelLocalSkillCast()
+	{
+		_isSkillCastPending = false;
+		_skillCastAckTimeoutRemaining = 0.0f;
+		_pendingSkillImpactRemaining = 0.0f;
+		_skillAnimationLockRemaining = 0.0f;
+		_pendingSkillTargetId = 0;
+		_queuedSkillResult = null;
+		ResetAnimationSpeed();
+	}
+
+	private void ApplySkillResultPresentation(SkillCastResult skillCast)
+	{
+		if (skillCast == null)
+		{
+			return;
+		}
+
+		if (!Player.IsLocalPlayer && skillCast.CasterId == (ulong)Player.EntityId)
+		{
+			PlayRemoteSkillAnimation(skillCast.SkillId);
+		}
+
+		ShowSkillResultText(skillCast);
+		_lastSkillCastSummary = BuildSkillCastSummary(skillCast);
+	}
+
+	private void PlaySkillAnimation(SkillConfigEntry skillConfig)
+	{
+		var state = ResolveSkillAnimationState(skillConfig.Id);
+		var desiredDuration = Mathf.Max(skillConfig.CastDelaySeconds, 0.05f);
+		PlayAnimationForState(state, force: true, desiredDurationSeconds: desiredDuration);
+	}
+
+	private void PlayRemoteSkillAnimation(int skillId)
+	{
+		var skillConfig = ResolveSkillConfig(skillId);
+		if (skillConfig == null)
+		{
+			PlayAnimationForState(ResolveSkillAnimationState(skillId), force: true);
+			return;
+		}
+
+		_skillAnimationLockRemaining = Mathf.Max(skillConfig.CastDelaySeconds, 0.05f);
+		PlaySkillAnimation(skillConfig);
+	}
+
+	private void ShowSkillResultText(SkillCastResult skillCast)
+	{
+		if (!TryResolveSelectableController(skillCast.TargetId, out var targetController))
+		{
+			return;
+		}
+
+		var targetBody = targetController.SelectionBody;
+		if (targetBody == null)
+		{
+			return;
+		}
+
+		var label = new Label3D
+		{
+			Text = BuildFloatingSkillText(skillCast),
+			FontSize = 42,
+			Billboard = BaseMaterial3D.BillboardModeEnum.Enabled,
+			NoDepthTest = true,
+			Modulate = ResolveFloatingSkillTextColor(skillCast),
+			Position = Vector3.Up * 2.2f,
+		};
+
+		targetBody.AddChild(label);
+		var tween = label.CreateTween();
+		tween.TweenProperty(label, "position", label.Position + Vector3.Up * 0.8f, FloatingSkillTextLifetimeSeconds);
+		tween.Parallel().TweenProperty(label, "modulate:a", 0.0f, FloatingSkillTextLifetimeSeconds);
+		tween.Finished += label.QueueFree;
+	}
+
+	private static string BuildFloatingSkillText(SkillCastResult skillCast)
+	{
+		var prefix = skillCast.EffectType == SkillEffectType.Heal ? "+" : "-";
+		var suffix = skillCast.IsKill ? " KO" : string.Empty;
+		return $"{prefix}{skillCast.Value}{suffix}";
+	}
+
+	private static Color ResolveFloatingSkillTextColor(SkillCastResult skillCast)
+	{
+		return skillCast.EffectType == SkillEffectType.Heal
+			? new Color(0.35f, 1.0f, 0.45f, 1.0f)
+			: new Color(1.0f, 0.24f, 0.18f, 1.0f);
+	}
+
+	private static bool TryResolveSelectableController(ulong entityId, out ISelectableWorldEntityController controller)
+	{
+		controller = null;
+		if (entityId > int.MaxValue || KBEngine.KBEngineApp.app == null)
+		{
+			return false;
+		}
+
+		var entity = KBEngine.KBEngineApp.app.findEntity((int)entityId);
+		controller = entity?.renderObj as ISelectableWorldEntityController;
+		return controller != null;
+	}
+
+	private static SkillConfigEntry ResolveSkillConfig(int skillId)
+	{
+		return SkillConfigRepository.TryGetBySkillId(skillId, out var skillConfig)
+			? skillConfig
+			: null;
+	}
+
+	private bool IsSkillCooldownReady(SkillConfigEntry skillConfig)
+	{
+		return GetDisplayCooldownRemaining(skillConfig) <= 0.0f;
+	}
+
+	private void StartLocalSkillCooldown(SkillConfigEntry skillConfig)
+	{
+		if (skillConfig == null)
+		{
+			return;
+		}
+
+		_skillCooldowns[skillConfig.Id] = skillConfig.CooldownSeconds;
+		if (skillConfig.UsesGlobalCooldown)
+		{
+			_globalSkillCooldownRemaining = GlobalCooldownSeconds;
+		}
+	}
+
+	private void ClearLocalSkillCooldown(int skillId)
+	{
+		_skillCooldowns.Remove(skillId);
+		if (ResolveSkillConfig(skillId)?.UsesGlobalCooldown == true)
+		{
+			_globalSkillCooldownRemaining = 0.0f;
+		}
+	}
+
+	private void SetLocalSkillMessage(string message)
+	{
+		_lastSkillCastSummary = message;
+	}
+
+	private ulong ResolveSkillCastTargetEntityId(SkillConfigEntry skillConfig)
+	{
+		if (skillConfig == null || skillConfig.IsSelfTargetSkill || skillConfig.IsFriendlyTargetSkill)
+		{
+			return 0UL;
+		}
+
+		if (SelectedTarget == null || !IsSelectedTargetValid())
+		{
+			return 0UL;
+		}
+
+		var targetEntityId = GetSelectedMonsterController()?.Monster?.EntityId ?? -1;
+		return targetEntityId > 0 ? (ulong)targetEntityId : 0UL;
+	}
+
+	private bool IsValidSkillCastTarget(SkillConfigEntry skillConfig, ulong targetEntityId)
+	{
+		if (skillConfig == null)
+		{
+			return false;
+		}
+
+		if (skillConfig.IsSelfTargetSkill || skillConfig.IsFriendlyTargetSkill)
+		{
+			return true;
+		}
+
+		return targetEntityId > 0UL;
+	}
+
+	private bool IsSkillTargetInRange(SkillConfigEntry skillConfig, ulong targetEntityId)
+	{
+		if (Player != null && (targetEntityId == 0UL || targetEntityId == (ulong)Player.EntityId))
+		{
+			return true;
+		}
+
+		if (CharacterBody == null || SelectedTarget == null)
+		{
+			return false;
+		}
+
+		var targetBody = GetTargetBody(SelectedTarget);
+		if (targetBody == null)
+		{
+			return false;
+		}
+
+		var range = skillConfig?.RangeMax > 0.0f ? skillConfig.RangeMax : AttackRange;
+		if (range <= 0.0f)
+		{
+			return true;
+		}
+
+		var planarDelta = targetBody.GlobalPosition - CharacterBody.GlobalPosition;
+		planarDelta.Y = 0.0f;
+		return planarDelta.LengthSquared() <= range * range;
+	}
+
+	private ISelectableWorldEntityController FindSelectableTargetAtScreenPosition(Vector2 screenPosition)
 	{
 		var from = _camera.ProjectRayOrigin(screenPosition);
 		var to = from + _camera.ProjectRayNormal(screenPosition) * SelectionRayLength;
@@ -239,22 +687,18 @@ public partial class PlayerController : WorldEntityControllerBase<Player>
 		}
 
 		var hitNode = colliderObj.As<Node>();
-		var controller = FindControllerInHierarchy<MonsterController>(hitNode);
+		var controller = FindControllerInHierarchy<ISelectableWorldEntityController>(hitNode);
 		if (controller == null)
 		{
-			GD.Print($"[TargetSelect] No MonsterController found in hierarchy of {hitNode.Name}");
+			GD.Print($"[TargetSelect] No selectable controller found in hierarchy of {hitNode.Name}");
 		}
 
 		return controller;
 	}
 
-	private static MeshInstance3D CreateSelectionRing()
+	private static MeshInstance3D CreateSelectionRing(float innerRadius)
 	{
-		var torusMesh = new TorusMesh
-		{
-			InnerRadius = 0.35f,
-			OuterRadius = 0.45f,
-		};
+		var ringMesh = CreateFlatSelectionRingMesh(innerRadius, innerRadius + SelectionRingThickness);
 
 		var material = new StandardMaterial3D
 		{
@@ -263,20 +707,126 @@ public partial class PlayerController : WorldEntityControllerBase<Player>
 			Emission = new Color(1.0f, 0.0f, 0.0f),
 			EmissionEnergyMultiplier = 2.0f,
 			ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded,
+			CullMode = BaseMaterial3D.CullModeEnum.Disabled,
 			DisableReceiveShadows = true,
 		};
 
 		var ring = new MeshInstance3D
 		{
-			Mesh = torusMesh,
+			Mesh = ringMesh,
 			MaterialOverride = material,
-			RotationDegrees = new Vector3(90.0f, 0.0f, 0.0f),
+			TopLevel = true,
 		};
 
 		return ring;
 	}
 
-	private static T FindControllerInHierarchy<T>(Node node) where T : Node
+	private static ArrayMesh CreateFlatSelectionRingMesh(float innerRadius, float outerRadius)
+	{
+		var surfaceTool = new SurfaceTool();
+		surfaceTool.Begin(Mesh.PrimitiveType.Triangles);
+
+		for (var segment = 0; segment < SelectionRingSegments; segment++)
+		{
+			var currentAngle = Mathf.Tau * segment / SelectionRingSegments;
+			var nextAngle = Mathf.Tau * (segment + 1) / SelectionRingSegments;
+			var innerCurrent = new Vector3(Mathf.Cos(currentAngle) * innerRadius, 0.0f, Mathf.Sin(currentAngle) * innerRadius);
+			var outerCurrent = new Vector3(Mathf.Cos(currentAngle) * outerRadius, 0.0f, Mathf.Sin(currentAngle) * outerRadius);
+			var innerNext = new Vector3(Mathf.Cos(nextAngle) * innerRadius, 0.0f, Mathf.Sin(nextAngle) * innerRadius);
+			var outerNext = new Vector3(Mathf.Cos(nextAngle) * outerRadius, 0.0f, Mathf.Sin(nextAngle) * outerRadius);
+
+			AddSelectionRingTriangle(surfaceTool, innerCurrent, outerCurrent, outerNext);
+			AddSelectionRingTriangle(surfaceTool, innerCurrent, outerNext, innerNext);
+		}
+
+		return surfaceTool.Commit();
+	}
+
+	private static void AddSelectionRingTriangle(SurfaceTool surfaceTool, Vector3 first, Vector3 second, Vector3 third)
+	{
+		surfaceTool.SetNormal(Vector3.Up);
+		surfaceTool.AddVertex(first);
+		surfaceTool.SetNormal(Vector3.Up);
+		surfaceTool.AddVertex(second);
+		surfaceTool.SetNormal(Vector3.Up);
+		surfaceTool.AddVertex(third);
+	}
+
+	private static CharacterBody3D GetTargetBody(ISelectableWorldEntityController target)
+	{
+		return target?.SelectionBody;
+	}
+
+	private Vector3 ResolveSelectionRingPosition(CharacterBody3D body)
+	{
+		var fallbackPosition = ResolveSelectionRingFallbackPosition(body);
+		var from = body.GlobalPosition + Vector3.Up * SelectionRingGroundRayStartHeight;
+		var to = body.GlobalPosition - Vector3.Up * SelectionRingGroundRayLength;
+		var query = new PhysicsRayQueryParameters3D
+		{
+			From = from,
+			To = to,
+			CollideWithBodies = true,
+			CollideWithAreas = false,
+		};
+
+		query.Exclude.Add(body.GetRid());
+
+		var result = GetWorld3D().DirectSpaceState.IntersectRay(query);
+		if (result.TryGetValue("position", out var hitPosition))
+		{
+			var groundPosition = hitPosition.AsVector3() + Vector3.Up * SelectionRingYOffset;
+			if (groundPosition.Y <= body.GlobalPosition.Y + 0.1f)
+			{
+				return new Vector3(body.GlobalPosition.X, groundPosition.Y, body.GlobalPosition.Z);
+			}
+		}
+
+		return fallbackPosition;
+	}
+
+	private static Vector3 ResolveSelectionRingFallbackPosition(CharacterBody3D body)
+	{
+		var collisionShape = body.GetNodeOrNull<CollisionShape3D>("CollisionShape3D");
+		if (collisionShape == null)
+		{
+			return body.GlobalPosition + Vector3.Up * SelectionRingYOffset;
+		}
+
+		return collisionShape.GlobalPosition - Vector3.Up * ResolveCollisionShapeHalfHeight(collisionShape.Shape) + Vector3.Up * SelectionRingYOffset;
+	}
+
+	private static float ResolveSelectionRingInnerRadius(CharacterBody3D body)
+	{
+		var collisionShape = body.GetNodeOrNull<CollisionShape3D>("CollisionShape3D");
+		return Mathf.Max(SelectionRingDefaultInnerRadius, ResolveCollisionShapeRadius(collisionShape?.Shape) + 0.12f);
+	}
+
+	private static float ResolveCollisionShapeHalfHeight(Shape3D shape)
+	{
+		return shape switch
+		{
+			CapsuleShape3D capsule => capsule.Height * 0.5f,
+			BoxShape3D box => box.Size.Y * 0.5f,
+			CylinderShape3D cylinder => cylinder.Height * 0.5f,
+			SphereShape3D sphere => sphere.Radius,
+			_ => 0.0f,
+		};
+	}
+
+	private static float ResolveCollisionShapeRadius(Shape3D shape)
+	{
+		return shape switch
+		{
+			CapsuleShape3D capsule => capsule.Radius,
+			CylinderShape3D cylinder => cylinder.Radius,
+			SphereShape3D sphere => sphere.Radius,
+			BoxShape3D box => Mathf.Max(box.Size.X, box.Size.Z) * 0.5f,
+			_ => SelectionRingDefaultInnerRadius,
+		};
+	}
+
+	private static T FindControllerInHierarchy<T>(Node node) where T : class
 	{
 		var current = node;
 		while (current != null)
@@ -355,9 +905,22 @@ public partial class PlayerController : WorldEntityControllerBase<Player>
 			_attackCooldownRemaining -= (float)delta;
 		}
 
+		TickSkillCooldowns((float)delta);
+		TickSkillCastState((float)delta);
+
+		if (_isSkillCastPending)
+		{
+			_skillCastAckTimeoutRemaining -= (float)delta;
+			if (_skillCastAckTimeoutRemaining <= 0.0f)
+			{
+				GD.PushWarning($"Skill cast ack timed out. skill={_pendingSkillId}, target={_pendingSkillTargetId}");
+				CancelLocalSkillCast();
+			}
+		}
+
 		if (SelectedTarget != null)
 		{
-			if (!IsInstanceValid(SelectedTarget))
+			if (!IsSelectedTargetValid())
 			{
 				ClearSelection();
 			}
@@ -369,6 +932,63 @@ public partial class PlayerController : WorldEntityControllerBase<Player>
 
 		EnsureAppearanceProfileApplied();
 		UpdateAnimationState((float)delta);
+	}
+
+	private void TickSkillCastState(float delta)
+	{
+		if (_skillAnimationLockRemaining > 0.0f)
+		{
+			_skillAnimationLockRemaining = Mathf.Max(0.0f, _skillAnimationLockRemaining - delta);
+			if (_skillAnimationLockRemaining <= 0.0f)
+			{
+				ResetAnimationSpeed();
+			}
+		}
+
+		if (_pendingSkillImpactRemaining <= 0.0f)
+		{
+			return;
+		}
+
+		_pendingSkillImpactRemaining = Mathf.Max(0.0f, _pendingSkillImpactRemaining - delta);
+		if (_pendingSkillImpactRemaining > 0.0f)
+		{
+			return;
+		}
+
+		if (_queuedSkillResult != null)
+		{
+			var result = _queuedSkillResult;
+			CompleteLocalSkillCast();
+			ApplySkillResultPresentation(result);
+		}
+	}
+
+	private void TickSkillCooldowns(float delta)
+	{
+		if (_globalSkillCooldownRemaining > 0.0f)
+		{
+			_globalSkillCooldownRemaining = Mathf.Max(0.0f, _globalSkillCooldownRemaining - delta);
+		}
+
+		if (_skillCooldowns.Count == 0)
+		{
+			return;
+		}
+
+		var skillIds = new List<int>(_skillCooldowns.Keys);
+		foreach (var skillId in skillIds)
+		{
+			var remaining = _skillCooldowns[skillId] - delta;
+			if (remaining <= 0.0f)
+			{
+				_skillCooldowns.Remove(skillId);
+			}
+			else
+			{
+				_skillCooldowns[skillId] = remaining;
+			}
+		}
 	}
 
 	protected override bool ShouldUseMovementFacing()
@@ -403,7 +1023,7 @@ public partial class PlayerController : WorldEntityControllerBase<Player>
 			return;
 		}
 
-		if (_attackCooldownRemaining > 0f)
+		if (_attackCooldownRemaining > 0f || _skillAnimationLockRemaining > 0.0f)
 		{
 			return;
 		}
@@ -532,7 +1152,7 @@ public partial class PlayerController : WorldEntityControllerBase<Player>
 		return displacement;
 	}
 
-	private void PlayAnimationForState(PlayerAnimationState state, bool force = false)
+	private void PlayAnimationForState(PlayerAnimationState state, bool force = false, float desiredDurationSeconds = 0.0f)
 	{
 		if (_modelAnimationPlayer == null || _currentAnimationRuntimeSet == null || !_currentAnimationRuntimeSet.StateAnimations.TryGetValue(state, out var animationKey))
 		{
@@ -546,7 +1166,34 @@ public partial class PlayerController : WorldEntityControllerBase<Player>
 
 		_currentAnimationStateName = state.ToString();
 		_currentAnimationKey = animationKey;
+		ApplyAnimationSpeed(animationKey, desiredDurationSeconds);
 		_modelAnimationPlayer.Play(animationKey);
+	}
+
+	private void ApplyAnimationSpeed(string animationKey, float desiredDurationSeconds)
+	{
+		if (_modelAnimationPlayer == null || desiredDurationSeconds <= 0.0f || !_modelAnimationPlayer.HasAnimation(animationKey))
+		{
+			ResetAnimationSpeed();
+			return;
+		}
+
+		var animation = _modelAnimationPlayer.GetAnimation(animationKey);
+		if (animation == null || animation.Length <= 0.0)
+		{
+			ResetAnimationSpeed();
+			return;
+		}
+
+		_modelAnimationPlayer.SpeedScale = Mathf.Clamp((float)(animation.Length / desiredDurationSeconds), 0.2f, 4.0f);
+	}
+
+	private void ResetAnimationSpeed()
+	{
+		if (_modelAnimationPlayer != null)
+		{
+			_modelAnimationPlayer.SpeedScale = 1.0f;
+		}
 	}
 
 	private void EnsureAppearanceProfileApplied(bool force = false)
@@ -795,6 +1442,20 @@ public partial class PlayerController : WorldEntityControllerBase<Player>
 			"slide_attack",
 			"high_spin_attack",
 			"spell_cast");
+
+		TryAssignStateAnimation(runtimeSet, PlayerAnimationState.HeavyAttack,
+			"high_spin_attack",
+			"slash_4",
+			"slash_5",
+			"slide_attack",
+			"jump_attack",
+			"attack");
+
+		TryAssignStateAnimation(runtimeSet, PlayerAnimationState.Cast,
+			"spell_cast",
+			"cast",
+			"power_up",
+			"attack");
 	}
 
 	private static void TryAssignStateAnimation(PlayerAnimationRuntimeSet runtimeSet, PlayerAnimationState state, params string[] preferredFileStems)

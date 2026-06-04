@@ -64,7 +64,7 @@ public abstract class KbeEntityProtocolState<TEntity> where TEntity : Entity
 
 	protected static KbeCombatState ResolveCombatState(CombatBase combat)
 	{
-		return combat == null ? KbeCombatState.Empty : new KbeCombatState(combat.hp, combat.mp, combat.attack, combat.defense);
+		return combat == null ? KbeCombatState.Empty : new KbeCombatState(combat.hp, combat.mp, 0U, 0U);
 	}
 
 	protected static KbeMotionState ResolveMotionState(MotionBase motion)
@@ -83,9 +83,9 @@ public sealed class KbePlayerProtocolState : KbeEntityProtocolState<Player>
 	public ushort ServerId => Entity.server_id;
 	public ulong RawServerTime => Entity.server_time;
 	public ushort Level => Entity.level;
-	public byte Role => Entity.role_type;
+	public byte Role => Entity.role;
 	public byte Sex => Entity.sex;
-	public uint Exp => Entity.exp;
+	public uint Exp => 0U;
 	public byte SpaceLine => Entity.space_line;
 	public uint SpaceUtype => Entity.space_utype;
 	public bool IsLocalPlayer => Entity.isPlayer();

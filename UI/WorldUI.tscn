@@ -15,9 +15,9 @@ script = ExtResource("1")
 [node name="MarginContainer" type="MarginContainer" parent="."]
 layout_mode = 0
 offset_left = 16.0
-offset_top = 16.0
+offset_top = 88.0
 offset_right = 420.0
-offset_bottom = 240.0
+offset_bottom = 312.0
 
 [node name="InfoLabel" type="Label" parent="MarginContainer"]
 layout_mode = 2
@@ -30,28 +30,47 @@ layout_mode = 1
 anchors_preset = 5
 anchor_left = 0.5
 anchor_right = 0.5
-offset_left = -180.0
-offset_right = 180.0
-offset_top = 8.0
-offset_bottom = 72.0
-z_index = 1
+offset_left = -170.0
+offset_right = 170.0
+offset_top = 12.0
+offset_bottom = 84.0
+z_index = 10
 
 [node name="TargetNameLabel" type="Label" parent="TargetInfoPanel"]
-layout_mode = 1
-anchors_preset = 2
-anchor_right = 1.0
-offset_top = 6.0
+layout_mode = 0
+offset_left = 12.0
+offset_top = 10.0
+offset_right = 328.0
 offset_bottom = 36.0
 text = ""
 horizontal_alignment = 1
 vertical_alignment = 1
 
 [node name="TargetHPLabel" type="Label" parent="TargetInfoPanel"]
-layout_mode = 1
-anchors_preset = 2
-anchor_right = 1.0
-offset_top = 36.0
+layout_mode = 0
+offset_left = 12.0
+offset_top = 40.0
+offset_right = 328.0
 offset_bottom = 66.0
 text = ""
 horizontal_alignment = 1
 vertical_alignment = 1
+
+[node name="SkillBarPanel" type="PanelContainer" parent="."]
+layout_mode = 1
+anchors_preset = 7
+anchor_left = 0.5
+anchor_top = 1.0
+anchor_right = 0.5
+anchor_bottom = 1.0
+offset_left = -360.0
+offset_top = -76.0
+offset_right = 360.0
+offset_bottom = -16.0
+grow_horizontal = 2
+grow_vertical = 0
+
+[node name="SkillButtonContainer" type="HBoxContainer" parent="SkillBarPanel"]
+layout_mode = 2
+theme_override_constants/separation = 8
+alignment = 1

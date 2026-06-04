@@ -6,7 +6,8 @@ using CommonData;
 
 public partial class MainUi : Control
 {
-	private const string LoginConfigPath = "user://login.cfg";
+	private const string LoginConfigPath = "user://login.json";
+	private const string LegacyLoginConfigPath = "user://login.cfg";
 	private const string LoginConfigSection = "login";
 	private const double LocalPlayerReadyPollIntervalSeconds = 0.1d;
 	private static readonly string[] NicknamePrefixes = { "清风", "流云", "长歌", "星河", "青岚", "暮雪", "惊鸿", "晓月" };
@@ -34,6 +35,7 @@ public partial class MainUi : Control
 	private KbeClient _client;
 	private bool _isLoginInFlight;
 	private bool _isWorldLoadRequested;
+	private bool _isLoadingRememberedLogin;
 	private double _localPlayerReadyPollAccumulator;
 
 	public override void _Ready()
@@ -57,6 +59,10 @@ public partial class MainUi : Control
 		_createRoleConfirmButton = GetNode<Button>("CreateRoleOverlay/CenterContainer/Panel/VBox/ActionRow/ConfirmBtn");
 		_createRoleCancelButton = GetNode<Button>("CreateRoleOverlay/CenterContainer/Panel/VBox/ActionRow/CancelBtn");
 		_client = App.Instance?.Client;
+
+		_userNameEdit.TextChanged += _ => PersistRememberedLoginIfEnabled();
+		_passwordEdit.TextChanged += _ => PersistRememberedLoginIfEnabled();
+		_nameEdit.TextChanged += _ => PersistRememberedLoginIfEnabled();
 
 		PopulateCreateRoleOptions();
 		LoadRememberedLogin();
@@ -181,7 +187,10 @@ public partial class MainUi : Control
 		if (!toggledOn)
 		{
 			ClearRememberedLogin();
+			return;
 		}
+
+		PersistRememberedLoginIfEnabled();
 	}
 
 	private void _on_login_btn_button_up()
@@ -294,6 +303,7 @@ public partial class MainUi : Control
 		_nameEdit.Text = draft.Name;
 		_createNameEdit.Text = draft.Name;
 		UpdateCreateRoleSummary();
+		PersistRememberedLoginIfEnabled();
 		_createRoleOverlay.Visible = false;
 	}
 
@@ -334,32 +344,35 @@ public partial class MainUi : Control
 
 	private void LoadRememberedLogin()
 	{
-		var config = new ConfigFile();
-		if (config.Load(LoginConfigPath) != Error.Ok)
+		_isLoadingRememberedLogin = true;
+		if (!TryLoadRememberedLoginJson(out var preference))
 		{
-			_rememberLoginCheckBox.ButtonPressed = false;
-			return;
+			if (!TryLoadLegacyRememberedLogin(out preference))
+			{
+				_rememberLoginCheckBox.ButtonPressed = false;
+				_isLoadingRememberedLogin = false;
+				return;
+			}
 		}
 
 		try
 		{
-			var rememberLogin = (bool)config.GetValue(LoginConfigSection, "remember", false);
-			_rememberLoginCheckBox.ButtonPressed = rememberLogin;
-			if (!rememberLogin)
+			_rememberLoginCheckBox.ButtonPressed = preference.Remember;
+			if (!preference.Remember)
 			{
 				return;
 			}
 
-			_userNameEdit.Text = (string)config.GetValue(LoginConfigSection, "username", string.Empty);
-			_passwordEdit.Text = (string)config.GetValue(LoginConfigSection, "password", string.Empty);
-			_nameEdit.Text = (string)config.GetValue(LoginConfigSection, "display_name", string.Empty);
+			_userNameEdit.Text = preference.Username ?? string.Empty;
+			_passwordEdit.Text = preference.Password ?? string.Empty;
+			_nameEdit.Text = preference.DisplayName ?? string.Empty;
 
 			var draft = CharacterCreationState.BuildDefaultDraft();
 			draft.Name = _nameEdit.Text;
-			draft.Role = (int)config.GetValue(LoginConfigSection, "role", draft.Role);
-			draft.Sex = (int)config.GetValue(LoginConfigSection, "sex", draft.Sex);
-			draft.ModelId = Convert.ToUInt32(config.GetValue(LoginConfigSection, "model_id", (long)draft.ModelId));
-			draft.IsConfirmed = (bool)config.GetValue(LoginConfigSection, "character_confirmed", false);
+			draft.Role = preference.Role != 0 ? preference.Role : draft.Role;
+			draft.Sex = preference.Sex != 0 ? preference.Sex : draft.Sex;
+			draft.ModelId = preference.ModelId != 0U ? preference.ModelId : draft.ModelId;
+			draft.IsConfirmed = preference.CharacterConfirmed;
 			CharacterCreationState.EnsureModelResolved(draft);
 			CharacterCreationState.Set(draft);
 		}
@@ -369,6 +382,28 @@ public partial class MainUi : Control
 			_rememberLoginCheckBox.ButtonPressed = false;
 			CharacterCreationState.Reset();
 		}
+		finally
+		{
+			_isLoadingRememberedLogin = false;
+		}
+	}
+
+	private void PersistRememberedLoginIfEnabled()
+	{
+		if (_isLoadingRememberedLogin || !_rememberLoginCheckBox.ButtonPressed)
+		{
+			return;
+		}
+
+		var draft = CharacterCreationState.Current.Clone();
+		var displayName = _nameEdit.Text.Trim();
+		if (!string.IsNullOrWhiteSpace(displayName))
+		{
+			draft.Name = displayName;
+		}
+
+		CharacterCreationState.EnsureModelResolved(draft);
+		PersistLoginPreference(_userNameEdit.Text.Trim(), _passwordEdit.Text.Trim(), draft);
 	}
 
 	private void PersistLoginPreference(string account, string password, CharacterCreationDraft draft)
@@ -379,26 +414,86 @@ public partial class MainUi : Control
 			return;
 		}
 
-		var config = new ConfigFile();
-		config.SetValue(LoginConfigSection, "remember", true);
-		config.SetValue(LoginConfigSection, "username", account);
-		config.SetValue(LoginConfigSection, "password", password);
-		config.SetValue(LoginConfigSection, "display_name", draft.Name);
-		config.SetValue(LoginConfigSection, "role", draft.Role);
-		config.SetValue(LoginConfigSection, "sex", draft.Sex);
-		config.SetValue(LoginConfigSection, "model_id", (long)draft.ModelId);
-		config.SetValue(LoginConfigSection, "character_confirmed", draft.IsConfirmed);
-		config.Save(LoginConfigPath);
+		var preference = new RememberedLoginPreference
+		{
+			Remember = true,
+			Username = account,
+			Password = password,
+			DisplayName = draft.Name,
+			Role = draft.Role,
+			Sex = draft.Sex,
+			ModelId = draft.ModelId,
+			CharacterConfirmed = draft.IsConfirmed,
+			SavedAtUnixMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+		};
+
+		try
+		{
+			using var file = FileAccess.Open(LoginConfigPath, FileAccess.ModeFlags.Write);
+			file.StoreString(JsonSerializer.Serialize(preference, new JsonSerializerOptions { WriteIndented = true }));
+		}
+		catch (Exception exception)
+		{
+			GD.PushWarning($"Failed to save login json: {exception.Message}");
+		}
 	}
 
 	private void ClearRememberedLogin()
 	{
+		RemoveUserFile(LoginConfigPath);
+		RemoveUserFile(LegacyLoginConfigPath);
+	}
+
+	private static bool TryLoadRememberedLoginJson(out RememberedLoginPreference preference)
+	{
+		preference = null;
 		if (!FileAccess.FileExists(LoginConfigPath))
 		{
-			return;
+			return false;
 		}
 
-		DirAccess.RemoveAbsolute(ProjectSettings.GlobalizePath(LoginConfigPath));
+		try
+		{
+			using var file = FileAccess.Open(LoginConfigPath, FileAccess.ModeFlags.Read);
+			preference = JsonSerializer.Deserialize<RememberedLoginPreference>(file.GetAsText());
+			return preference != null;
+		}
+		catch (Exception exception)
+		{
+			GD.PushWarning($"Ignored invalid login json: {exception.Message}");
+			return false;
+		}
+	}
+
+	private static bool TryLoadLegacyRememberedLogin(out RememberedLoginPreference preference)
+	{
+		preference = null;
+		var config = new ConfigFile();
+		if (config.Load(LegacyLoginConfigPath) != Error.Ok)
+		{
+			return false;
+		}
+
+		preference = new RememberedLoginPreference
+		{
+			Remember = (bool)config.GetValue(LoginConfigSection, "remember", false),
+			Username = (string)config.GetValue(LoginConfigSection, "username", string.Empty),
+			Password = (string)config.GetValue(LoginConfigSection, "password", string.Empty),
+			DisplayName = (string)config.GetValue(LoginConfigSection, "display_name", string.Empty),
+			Role = (int)config.GetValue(LoginConfigSection, "role", 0),
+			Sex = (int)config.GetValue(LoginConfigSection, "sex", 0),
+			ModelId = Convert.ToUInt32(config.GetValue(LoginConfigSection, "model_id", 0L)),
+			CharacterConfirmed = (bool)config.GetValue(LoginConfigSection, "character_confirmed", false),
+		};
+		return true;
+	}
+
+	private static void RemoveUserFile(string path)
+	{
+		if (FileAccess.FileExists(path))
+		{
+			DirAccess.RemoveAbsolute(ProjectSettings.GlobalizePath(path));
+		}
 	}
 
 	private void OpenCreateRoleOverlay()
@@ -507,5 +602,18 @@ public partial class MainUi : Control
 		_createRandomNameButton.Disabled = isBusy;
 		_createRoleConfirmButton.Disabled = isBusy;
 		_createRoleCancelButton.Disabled = isBusy;
+	}
+
+	private sealed class RememberedLoginPreference
+	{
+		public bool Remember { get; set; }
+		public string Username { get; set; } = string.Empty;
+		public string Password { get; set; } = string.Empty;
+		public string DisplayName { get; set; } = string.Empty;
+		public int Role { get; set; }
+		public int Sex { get; set; }
+		public uint ModelId { get; set; }
+		public bool CharacterConfirmed { get; set; }
+		public long SavedAtUnixMs { get; set; }
 	}
 }
