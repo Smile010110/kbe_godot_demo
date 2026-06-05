@@ -4,5 +4,5 @@ public static class GameConfig
     public static int KbEnginePort { get; } = 20013;
     public static ushort DefaultServerId { get; } = 1;
     public static string ClientInfo { get; } = "godot_kbe_demo";
-    public static int ServerHeartbeatTick { get; } = 10;
+    public static int ServerHeartbeatTick { get; } = 30;
 }

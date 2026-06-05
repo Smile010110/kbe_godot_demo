@@ -1,7 +1,9 @@
 using Godot;
 using System;
 using System.Collections.Generic;
+using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using CommonData;
 
 public partial class MainUi : Control
@@ -10,6 +12,7 @@ public partial class MainUi : Control
 	private const string LegacyLoginConfigPath = "user://login.cfg";
 	private const string LoginConfigSection = "login";
 	private const double LocalPlayerReadyPollIntervalSeconds = 0.1d;
+	private const double LoginSaveDebounceSeconds = 0.35d;
 	private static readonly string[] NicknamePrefixes = { "清风", "流云", "长歌", "星河", "青岚", "暮雪", "惊鸿", "晓月" };
 	private static readonly string[] NicknameSuffixes = { "剑", "影", "歌", "川", "羽", "辰", "霜", "岚" };
 
@@ -36,6 +39,8 @@ public partial class MainUi : Control
 	private bool _isLoginInFlight;
 	private bool _isWorldLoadRequested;
 	private bool _isLoadingRememberedLogin;
+	private bool _hasPendingRememberedLoginSave;
+	private double _rememberedLoginSaveRemainingSeconds;
 	private double _localPlayerReadyPollAccumulator;
 
 	public override void _Ready()
@@ -60,9 +65,9 @@ public partial class MainUi : Control
 		_createRoleCancelButton = GetNode<Button>("CreateRoleOverlay/CenterContainer/Panel/VBox/ActionRow/CancelBtn");
 		_client = App.Instance?.Client;
 
-		_userNameEdit.TextChanged += _ => PersistRememberedLoginIfEnabled();
-		_passwordEdit.TextChanged += _ => PersistRememberedLoginIfEnabled();
-		_nameEdit.TextChanged += _ => PersistRememberedLoginIfEnabled();
+		_userNameEdit.TextChanged += _ => ScheduleRememberedLoginSave();
+		_passwordEdit.TextChanged += _ => ScheduleRememberedLoginSave();
+		_nameEdit.TextChanged += _ => ScheduleRememberedLoginSave();
 
 		PopulateCreateRoleOptions();
 		LoadRememberedLogin();
@@ -88,6 +93,8 @@ public partial class MainUi : Control
 
 	public override void _ExitTree()
 	{
+		FlushPendingRememberedLoginSave();
+
 		if (_client != null)
 		{
 			_client.ConnectionStateChanged -= OnConnectionState;
@@ -112,6 +119,8 @@ public partial class MainUi : Control
 
 	public override void _Process(double delta)
 	{
+		TickRememberedLoginSave(delta);
+
 		if (!_isLoginInFlight || _isWorldLoadRequested || _client == null)
 		{
 			return;
@@ -303,6 +312,7 @@ public partial class MainUi : Control
 		_nameEdit.Text = draft.Name;
 		_createNameEdit.Text = draft.Name;
 		UpdateCreateRoleSummary();
+		FlushPendingRememberedLoginSave();
 		PersistRememberedLoginIfEnabled();
 		_createRoleOverlay.Visible = false;
 	}
@@ -364,7 +374,7 @@ public partial class MainUi : Control
 			}
 
 			_userNameEdit.Text = preference.Username ?? string.Empty;
-			_passwordEdit.Text = preference.Password ?? string.Empty;
+			_passwordEdit.Text = preference.ResolvePassword();
 			_nameEdit.Text = preference.DisplayName ?? string.Empty;
 
 			var draft = CharacterCreationState.BuildDefaultDraft();
@@ -390,6 +400,9 @@ public partial class MainUi : Control
 
 	private void PersistRememberedLoginIfEnabled()
 	{
+		_hasPendingRememberedLoginSave = false;
+		_rememberedLoginSaveRemainingSeconds = 0.0d;
+
 		if (_isLoadingRememberedLogin || !_rememberLoginCheckBox.ButtonPressed)
 		{
 			return;
@@ -418,7 +431,6 @@ public partial class MainUi : Control
 		{
 			Remember = true,
 			Username = account,
-			Password = password,
 			DisplayName = draft.Name,
 			Role = draft.Role,
 			Sex = draft.Sex,
@@ -426,6 +438,7 @@ public partial class MainUi : Control
 			CharacterConfirmed = draft.IsConfirmed,
 			SavedAtUnixMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
 		};
+		preference.SetPassword(password);
 
 		try
 		{
@@ -440,8 +453,47 @@ public partial class MainUi : Control
 
 	private void ClearRememberedLogin()
 	{
+		_hasPendingRememberedLoginSave = false;
+		_rememberedLoginSaveRemainingSeconds = 0.0d;
 		RemoveUserFile(LoginConfigPath);
 		RemoveUserFile(LegacyLoginConfigPath);
+	}
+
+	private void ScheduleRememberedLoginSave()
+	{
+		if (_isLoadingRememberedLogin || !_rememberLoginCheckBox.ButtonPressed)
+		{
+			return;
+		}
+
+		_hasPendingRememberedLoginSave = true;
+		_rememberedLoginSaveRemainingSeconds = LoginSaveDebounceSeconds;
+	}
+
+	private void TickRememberedLoginSave(double delta)
+	{
+		if (!_hasPendingRememberedLoginSave)
+		{
+			return;
+		}
+
+		_rememberedLoginSaveRemainingSeconds -= delta;
+		if (_rememberedLoginSaveRemainingSeconds > 0.0d)
+		{
+			return;
+		}
+
+		PersistRememberedLoginIfEnabled();
+	}
+
+	private void FlushPendingRememberedLoginSave()
+	{
+		if (!_hasPendingRememberedLoginSave)
+		{
+			return;
+		}
+
+		PersistRememberedLoginIfEnabled();
 	}
 
 	private static bool TryLoadRememberedLoginJson(out RememberedLoginPreference preference)
@@ -478,7 +530,7 @@ public partial class MainUi : Control
 		{
 			Remember = (bool)config.GetValue(LoginConfigSection, "remember", false),
 			Username = (string)config.GetValue(LoginConfigSection, "username", string.Empty),
-			Password = (string)config.GetValue(LoginConfigSection, "password", string.Empty),
+			LegacyPassword = (string)config.GetValue(LoginConfigSection, "password", string.Empty),
 			DisplayName = (string)config.GetValue(LoginConfigSection, "display_name", string.Empty),
 			Role = (int)config.GetValue(LoginConfigSection, "role", 0),
 			Sex = (int)config.GetValue(LoginConfigSection, "sex", 0),
@@ -606,14 +658,89 @@ public partial class MainUi : Control
 
 	private sealed class RememberedLoginPreference
 	{
+		private const string PasswordEncoding = "device-xor-v1";
+
 		public bool Remember { get; set; }
 		public string Username { get; set; } = string.Empty;
-		public string Password { get; set; } = string.Empty;
+
+		[JsonPropertyName("password")]
+		[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+		public string LegacyPassword { get; set; }
+
+		[JsonPropertyName("password_obfuscated")]
+		public string ObfuscatedPassword { get; set; } = string.Empty;
+
+		[JsonPropertyName("password_encoding")]
+		public string ObfuscatedPasswordEncoding { get; set; } = PasswordEncoding;
+
 		public string DisplayName { get; set; } = string.Empty;
 		public int Role { get; set; }
 		public int Sex { get; set; }
 		public uint ModelId { get; set; }
 		public bool CharacterConfirmed { get; set; }
 		public long SavedAtUnixMs { get; set; }
+
+		public string ResolvePassword()
+		{
+			if (string.Equals(ObfuscatedPasswordEncoding, PasswordEncoding, StringComparison.Ordinal)
+				&& !string.IsNullOrWhiteSpace(ObfuscatedPassword))
+			{
+				return DecodeDeviceBoundValue(ObfuscatedPassword);
+			}
+
+			return LegacyPassword ?? string.Empty;
+		}
+
+		public void SetPassword(string password)
+		{
+			LegacyPassword = null;
+			ObfuscatedPasswordEncoding = PasswordEncoding;
+			ObfuscatedPassword = EncodeDeviceBoundValue(password ?? string.Empty);
+		}
+
+		private static string EncodeDeviceBoundValue(string value)
+		{
+			if (string.IsNullOrEmpty(value))
+			{
+				return string.Empty;
+			}
+
+			var bytes = Encoding.UTF8.GetBytes(value);
+			ApplyDeviceKey(bytes);
+			return Convert.ToBase64String(bytes);
+		}
+
+		private static string DecodeDeviceBoundValue(string encodedValue)
+		{
+			try
+			{
+				var bytes = Convert.FromBase64String(encodedValue);
+				ApplyDeviceKey(bytes);
+				return Encoding.UTF8.GetString(bytes);
+			}
+			catch (Exception exception)
+			{
+				GD.PushWarning($"Ignored invalid saved password: {exception.Message}");
+				return string.Empty;
+			}
+		}
+
+		private static void ApplyDeviceKey(byte[] bytes)
+		{
+			if (bytes == null || bytes.Length == 0)
+			{
+				return;
+			}
+
+			var deviceId = OS.GetUniqueId();
+			var keyText = string.IsNullOrWhiteSpace(deviceId)
+				? "kbe_godot_demo_login"
+				: $"kbe_godot_demo_login:{deviceId}";
+			var keyBytes = Encoding.UTF8.GetBytes(keyText);
+			for (var i = 0; i < bytes.Length; i++)
+			{
+				bytes[i] ^= keyBytes[i % keyBytes.Length];
+			}
+		}
 	}
 }

@@ -43,7 +43,6 @@ public class Player : PlayerBase, ILocallyControlledWorldEntity, IWorldEntityRen
 	public ushort Level => _protocolState.Level;
 	public byte Role => _protocolState.Role;
 	public byte Sex => _protocolState.Sex;
-	public uint Exp => _protocolState.Exp;
 	public string RoleName => RoleConfigRepository.ResolveDisplayName(Role);
 	public uint AppearanceModelId => ResolveAppearanceModelId();
 	public byte SpaceLine => _protocolState.SpaceLine;
@@ -51,22 +50,24 @@ public class Player : PlayerBase, ILocallyControlledWorldEntity, IWorldEntityRen
 	public WorldEntityKind EntityKind => WorldEntityKind.Player;
 	public bool IsTeammate => false;
 	public string DisplayName => _protocolState.DisplayName;
-	public string SecondaryInfoText => WorldEntityNameplateText.BuildPlayerLine(HitPoints, ManaPoints, Attack, Defense, RawMoveSpeed, Exp);
+	public string SecondaryInfoText => WorldEntityNameplateText.BuildPlayerLine(HitPoints, ManaPoints, RawMoveSpeed);
 	public bool ShowSecondaryInfo => true;
 	public ulong HitPoints => _protocolState.Combat.HitPoints;
+	public ulong MaxHitPoints => _protocolState.Combat.MaxHitPoints;
 	public ulong ManaPoints => _protocolState.Combat.ManaPoints;
-	public uint Attack => _protocolState.Combat.Attack;
-	public uint Defense => _protocolState.Combat.Defense;
 	public byte RawMoveSpeed => _protocolState.Motion.RawMoveSpeed;
 
-	public event Action<SkillCastResult> SkillResultReceived;
-	public event Action<SkillCastError> SkillErrorReceived;
-
-	public bool TryCastSkill(int skillId, ulong targetEntityId, string extData = "")
+	public bool TryCastSkill(int skillId, int targetEntityId, string extData = "")
 	{
 		if (skillId < 0)
 		{
 			GD.PushWarning($"Invalid skill id: {skillId}");
+			return false;
+		}
+
+		if (targetEntityId < 0)
+		{
+			GD.PushWarning($"Invalid skill target id: {targetEntityId}");
 			return false;
 		}
 
@@ -202,15 +203,34 @@ public class Player : PlayerBase, ILocallyControlledWorldEntity, IWorldEntityRen
 		}
 	}
 
+	public override void on_skill_result(SKILL_RESULT protocolResult)
+	{
+		SkillProtocolLogger.LogResult("Player", EntityId, protocolResult);
+		var result = SkillCastResult.FromProtocol(protocolResult);
+		if (result == null)
+		{
+			return;
+		}
+
+		HandleSkillResult(result);
+		SkillClientRuntime.DispatchResult(result);
+	}
+
+	public override void on_skill_error(uint skillId, byte errorCode)
+	{
+		var error = SkillCastError.FromProtocol(skillId, errorCode);
+		SkillProtocolLogger.LogError("Player", EntityId, error);
+		HandleSkillError(error);
+		SkillClientRuntime.DispatchError(error);
+	}
+
 	public void HandleSkillResult(SkillCastResult skillCast)
 	{
-		SkillResultReceived?.Invoke(skillCast);
 		RefreshRenderInfo();
 	}
 
 	public void HandleSkillError(SkillCastError error)
 	{
-		SkillErrorReceived?.Invoke(error);
 		RefreshRenderInfo();
 	}
 
@@ -284,14 +304,18 @@ public class Player : PlayerBase, ILocallyControlledWorldEntity, IWorldEntityRen
 		}
 
 		var elapsedClientMs = Math.Max(0L, System.Environment.TickCount64 - _serverTimeAnchorClientTickMs);
+		if (_serverTimeUsesMilliseconds)
+		{
+			return _serverTimeAnchorValue + (ulong)elapsedClientMs;
+		}
+
 		var elapsedSeconds = (ulong)(elapsedClientMs / 1000L);
 		if (elapsedSeconds == 0UL)
 		{
 			return _serverTimeAnchorValue;
 		}
 
-		var tickStep = _serverTimeUsesMilliseconds ? 1000UL : 1UL;
-		return _serverTimeAnchorValue + elapsedSeconds * tickStep;
+		return _serverTimeAnchorValue + elapsedSeconds;
 	}
 
 	private void SyncServerTimeAnchor(ulong rawServerTime)

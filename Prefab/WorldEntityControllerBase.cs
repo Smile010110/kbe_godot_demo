@@ -15,13 +15,28 @@ public abstract partial class WorldEntityControllerBase<TEntity> : Node3D, IWorl
 	[Export]
 	public float RemoteSnapDistance = 1.5f;
 
+	private const string HealthBarRootName = "RuntimeHealthBar";
+	private const float HealthBarWidth = 0.92f;
+	private const float HealthBarHeight = 0.085f;
+	private const float HealthBarBorder = 0.018f;
+	private const float HealthBarYOffset = 1.40f;
+	private const float HealthBarFillZOffset = 0.01f;
+	private static readonly Color LocalHealthBarColor = new(0.16f, 0.95f, 0.22f, 1.0f);
+	private static readonly Color OtherHealthBarColor = new(1.0f, 0.12f, 0.10f, 1.0f);
+	private static readonly Color HealthBarBackgroundColor = new(0.03f, 0.03f, 0.03f, 1.0f);
+	private static readonly Color EmptyHealthBarColor = new(0.18f, 0.18f, 0.18f, 0.85f);
+
 	protected TEntity EntityView { get; private set; }
 	protected CharacterBody3D CharacterBody { get; private set; }
 	protected Label3D NameLabel { get; private set; }
 	protected Label3D InfoLabel { get; private set; }
+	public int SelectedEntityId => EntityView?.EntityId ?? -1;
 	public IWorldEntityView SelectedEntityView => EntityView;
 	public CharacterBody3D SelectionBody => CharacterBody;
 
+	private Node3D _healthBarRoot;
+	private MeshInstance3D _healthBarFill;
+	private StandardMaterial3D _healthBarFillMaterial;
 	private Vector3 _targetPosition;
 	private bool _isReady;
 	private bool _hasInitialTransform;
@@ -87,6 +102,7 @@ public abstract partial class WorldEntityControllerBase<TEntity> : Node3D, IWorl
 		NameLabel.Modulate = WorldEntityNameplateStyleResolver.ResolveColor(EntityView);
 		InfoLabel.Text = EntityView.SecondaryInfoText;
 		InfoLabel.Visible = EntityView.ShowSecondaryInfo;
+		UpdateHealthBar();
 	}
 
 	public virtual void UpdateFromEntity()
@@ -247,5 +263,107 @@ public abstract partial class WorldEntityControllerBase<TEntity> : Node3D, IWorl
 
 	protected virtual void UpdateControllerState()
 	{
+	}
+
+	private void UpdateHealthBar()
+	{
+		if (EntityView == null || NameLabel == null)
+		{
+			SetHealthBarVisible(false);
+			return;
+		}
+
+		if (EntityView.MaxHitPoints == 0UL)
+		{
+			SetHealthBarVisible(false);
+			return;
+		}
+
+		EnsureHealthBar();
+		if (_healthBarRoot == null || _healthBarFill == null)
+		{
+			return;
+		}
+
+		_healthBarRoot.Visible = true;
+		var ratio = Mathf.Clamp((float)((double)EntityView.HitPoints / EntityView.MaxHitPoints), 0.0f, 1.0f);
+		var displayRatio = Mathf.Max(ratio, 0.01f);
+		_healthBarFill.Visible = true;
+		_healthBarFill.Scale = new Vector3(displayRatio, 1.0f, 1.0f);
+		_healthBarFill.Position = new Vector3((displayRatio - 1.0f) * HealthBarWidth * 0.5f, 0.0f, HealthBarFillZOffset);
+		_healthBarFillMaterial.AlbedoColor = ratio <= 0.0f
+			? EmptyHealthBarColor
+			: EntityView.IsLocallyControlled
+			? LocalHealthBarColor
+			: OtherHealthBarColor;
+		_healthBarFillMaterial.Emission = _healthBarFillMaterial.AlbedoColor;
+	}
+
+	private void SetHealthBarVisible(bool visible)
+	{
+		if (_healthBarRoot != null && IsInstanceValid(_healthBarRoot))
+		{
+			_healthBarRoot.Visible = visible;
+		}
+	}
+
+	private void EnsureHealthBar()
+	{
+		if (_healthBarRoot != null && IsInstanceValid(_healthBarRoot))
+		{
+			return;
+		}
+
+		var headInfo = NameLabel?.GetParentOrNull<Node3D>();
+		if (headInfo == null)
+		{
+			return;
+		}
+
+		_healthBarRoot = new Node3D
+		{
+			Name = HealthBarRootName,
+			Position = new Vector3(0.0f, HealthBarYOffset, 0.0f),
+		};
+
+		var background = CreateHealthBarQuad(
+			"Background",
+			HealthBarWidth + HealthBarBorder * 2.0f,
+			HealthBarHeight + HealthBarBorder * 2.0f,
+			HealthBarBackgroundColor,
+			renderPriority: 0);
+		_healthBarFillMaterial = CreateHealthBarMaterial(LocalHealthBarColor, renderPriority: 1);
+		_healthBarFill = CreateHealthBarQuad("Fill", HealthBarWidth, HealthBarHeight, LocalHealthBarColor, _healthBarFillMaterial);
+		_healthBarFill.Position = new Vector3(0.0f, 0.0f, HealthBarFillZOffset);
+
+		_healthBarRoot.AddChild(background);
+		_healthBarRoot.AddChild(_healthBarFill);
+		headInfo.AddChild(_healthBarRoot);
+	}
+
+	private static MeshInstance3D CreateHealthBarQuad(string name, float width, float height, Color color, StandardMaterial3D material = null, int renderPriority = 0)
+	{
+		return new MeshInstance3D
+		{
+			Name = name,
+			Mesh = new QuadMesh { Size = new Vector2(width, height) },
+			MaterialOverride = material ?? CreateHealthBarMaterial(color, renderPriority),
+		};
+	}
+
+	private static StandardMaterial3D CreateHealthBarMaterial(Color color, int renderPriority)
+	{
+		return new StandardMaterial3D
+		{
+			AlbedoColor = color,
+			EmissionEnabled = true,
+			Emission = color,
+			EmissionEnergyMultiplier = 0.8f,
+			ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded,
+			NoDepthTest = true,
+			CullMode = BaseMaterial3D.CullModeEnum.Disabled,
+			DisableReceiveShadows = true,
+			RenderPriority = renderPriority,
+		};
 	}
 }

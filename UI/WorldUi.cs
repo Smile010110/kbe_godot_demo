@@ -8,6 +8,7 @@ public partial class WorldUi : Control
 	private Panel _targetInfoPanel;
 	private Label _targetNameLabel;
 	private Label _targetHpLabel;
+	private ProgressBar _targetHpBar;
 	private HBoxContainer _skillButtonContainer;
 	private readonly Dictionary<Button, SkillConfigEntry> _skillButtons = new();
 	private double _refreshAccumulator;
@@ -23,9 +24,11 @@ public partial class WorldUi : Control
 		_targetInfoPanel = GetNode<Panel>("TargetInfoPanel");
 		_targetNameLabel = GetNode<Label>("TargetInfoPanel/TargetNameLabel");
 		_targetHpLabel = GetNode<Label>("TargetInfoPanel/TargetHPLabel");
+		_targetHpBar = EnsureTargetHpBar();
 		_skillButtonContainer = GetNode<HBoxContainer>("SkillBarPanel/SkillButtonContainer");
 		PopulateSkillButtons();
 		RefreshHud(force: true);
+		RefreshTargetInfo(force: true);
 		RefreshSkillButtons();
 	}
 
@@ -125,17 +128,12 @@ public partial class WorldUi : Control
 		_infoLabel.Text = nextInfoText;
 	}
 
-	private void RefreshTargetInfo()
+	private void RefreshTargetInfo(bool force = false)
 	{
 		var target = PlayerController.LocalInstance?.SelectedTarget;
 		if (target == null || target is not GodotObject targetObject || !IsInstanceValid(targetObject))
 		{
-			if (_targetInfoPanel.Visible)
-			{
-				_targetInfoPanel.Visible = false;
-				_lastTargetName = string.Empty;
-				_lastTargetHpText = string.Empty;
-			}
+			HideTargetInfo();
 			return;
 		}
 
@@ -144,34 +142,96 @@ public partial class WorldUi : Control
 			_cachedTarget = target;
 			_lastTargetName = string.Empty;
 			_lastTargetHpText = string.Empty;
+			force = true;
 		}
 
 		var entity = target.SelectedEntityView;
 		if (entity == null)
 		{
+			HideTargetInfo();
 			return;
 		}
 
 		var name = entity.DisplayName ?? "???";
-		var hpText = entity.EntityKind == WorldEntityKind.Npc
+		var hpText = entity.MaxHitPoints == 0UL
 			? (string.IsNullOrWhiteSpace(entity.SecondaryInfoText) ? "NPC" : entity.SecondaryInfoText)
-			: $"HP {entity.HitPoints} / MP {entity.ManaPoints}";
+			: $"HP {entity.HitPoints}/{entity.MaxHitPoints} | MP {entity.ManaPoints}";
 
-		if (!_targetInfoPanel.Visible)
-		{
-			_targetInfoPanel.Visible = true;
-		}
+		_targetInfoPanel.Visible = true;
+		RefreshTargetHpBar(entity);
 
-		if (_lastTargetName != name)
+		if (force || _lastTargetName != name)
 		{
 			_lastTargetName = name;
 			_targetNameLabel.Text = name;
 		}
 
-		if (_lastTargetHpText != hpText)
+		if (force || _lastTargetHpText != hpText)
 		{
 			_lastTargetHpText = hpText;
 			_targetHpLabel.Text = hpText;
 		}
+	}
+
+	private void HideTargetInfo()
+	{
+		if (!_targetInfoPanel.Visible)
+		{
+			return;
+		}
+
+		_targetInfoPanel.Visible = false;
+		_lastTargetName = string.Empty;
+		_lastTargetHpText = string.Empty;
+		_cachedTarget = null;
+		if (_targetHpBar != null && IsInstanceValid(_targetHpBar))
+		{
+			_targetHpBar.Value = 0.0d;
+			_targetHpBar.Visible = false;
+		}
+	}
+
+	private ProgressBar EnsureTargetHpBar()
+	{
+		var existingBar = _targetInfoPanel.GetNodeOrNull<ProgressBar>("RuntimeTargetHPBar");
+		if (existingBar != null)
+		{
+			return existingBar;
+		}
+
+		var bar = new ProgressBar
+		{
+			Name = "RuntimeTargetHPBar",
+			ShowPercentage = false,
+			MinValue = 0.0d,
+			MaxValue = 1.0d,
+			Value = 0.0d,
+			CustomMinimumSize = new Vector2(170.0f, 8.0f),
+			MouseFilter = MouseFilterEnum.Ignore,
+		};
+		bar.SetAnchorsPreset(LayoutPreset.TopLeft);
+		bar.Position = new Vector2(_targetHpLabel.Position.X, _targetHpLabel.Position.Y + _targetHpLabel.Size.Y + 4.0f);
+		bar.Visible = false;
+		_targetInfoPanel.AddChild(bar);
+		return bar;
+	}
+
+	private void RefreshTargetHpBar(IWorldEntityView entity)
+	{
+		if (_targetHpBar == null || !IsInstanceValid(_targetHpBar))
+		{
+			_targetHpBar = EnsureTargetHpBar();
+		}
+
+		if (entity == null || entity.MaxHitPoints == 0UL)
+		{
+			_targetHpBar.Visible = false;
+			_targetHpBar.Value = 0.0d;
+			return;
+		}
+
+		_targetHpBar.Visible = true;
+		_targetHpBar.MaxValue = entity.MaxHitPoints;
+		_targetHpBar.Value = Mathf.Clamp((double)entity.HitPoints, 0.0d, entity.MaxHitPoints);
 	}
 }

@@ -3,20 +3,18 @@ using KBEngine;
 
 public readonly struct KbeCombatState
 {
-	public static KbeCombatState Empty { get; } = new(0UL, 0UL, 0U, 0U);
+	public static KbeCombatState Empty { get; } = new(0UL, 0UL, 0UL);
 
-	public KbeCombatState(ulong hitPoints, ulong manaPoints, uint attack, uint defense)
+	public KbeCombatState(ulong hitPoints, ulong maxHitPoints, ulong manaPoints)
 	{
 		HitPoints = hitPoints;
+		MaxHitPoints = maxHitPoints;
 		ManaPoints = manaPoints;
-		Attack = attack;
-		Defense = defense;
 	}
 
 	public ulong HitPoints { get; }
+	public ulong MaxHitPoints { get; }
 	public ulong ManaPoints { get; }
-	public uint Attack { get; }
-	public uint Defense { get; }
 }
 
 public readonly struct KbeMotionState
@@ -64,7 +62,7 @@ public abstract class KbeEntityProtocolState<TEntity> where TEntity : Entity
 
 	protected static KbeCombatState ResolveCombatState(CombatBase combat)
 	{
-		return combat == null ? KbeCombatState.Empty : new KbeCombatState(combat.hp, combat.mp, 0U, 0U);
+		return combat == null ? KbeCombatState.Empty : new KbeCombatState(combat.hp, combat.max_hp, combat.mp);
 	}
 
 	protected static KbeMotionState ResolveMotionState(MotionBase motion)
@@ -85,7 +83,6 @@ public sealed class KbePlayerProtocolState : KbeEntityProtocolState<Player>
 	public ushort Level => Entity.level;
 	public byte Role => Entity.role;
 	public byte Sex => Entity.sex;
-	public uint Exp => 0U;
 	public byte SpaceLine => Entity.space_line;
 	public uint SpaceUtype => Entity.space_utype;
 	public bool IsLocalPlayer => Entity.isPlayer();

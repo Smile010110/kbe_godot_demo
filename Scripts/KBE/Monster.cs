@@ -19,12 +19,11 @@ public class Monster : MonsterBase, IServerDrivenWorldEntity, IWorldEntityRender
 	public WorldEntityKind EntityKind => WorldEntityKind.Monster;
 	public bool IsTeammate => false;
 	public string DisplayName => _protocolState.DisplayName;
-	public string SecondaryInfoText => WorldEntityNameplateText.BuildCombatMotionLine(HitPoints, ManaPoints, Attack, Defense, RawMoveSpeed);
+	public string SecondaryInfoText => WorldEntityNameplateText.BuildCombatMotionLine(HitPoints, ManaPoints, RawMoveSpeed);
 	public bool ShowSecondaryInfo => true;
 	public ulong HitPoints => _protocolState.Combat.HitPoints;
+	public ulong MaxHitPoints => _protocolState.Combat.MaxHitPoints;
 	public ulong ManaPoints => _protocolState.Combat.ManaPoints;
-	public uint Attack => _protocolState.Combat.Attack;
-	public uint Defense => _protocolState.Combat.Defense;
 	public byte RawMoveSpeed => _protocolState.Motion.RawMoveSpeed;
 	public float MoveSpeedUnits => _protocolState.Motion.MoveSpeedUnits;
 	public Vector3 WorldPosition => _protocolState.WorldPosition;
@@ -81,6 +80,25 @@ public class Monster : MonsterBase, IServerDrivenWorldEntity, IWorldEntityRender
 	{
 		base.onDirectionChanged(oldValue);
 		RefreshRenderTransform();
+	}
+
+	public override void on_skill_result(SKILL_RESULT protocolResult)
+	{
+		SkillProtocolLogger.LogResult("Monster", EntityId, protocolResult);
+		var result = SkillCastResult.FromProtocol(protocolResult);
+		if (result == null)
+		{
+			return;
+		}
+
+		RefreshRenderInfo();
+	}
+
+	public override void on_skill_error(uint skillId, byte errorCode)
+	{
+		var error = SkillCastError.FromProtocol(skillId, errorCode);
+		SkillProtocolLogger.LogError("Monster", EntityId, error);
+		RefreshRenderInfo();
 	}
 
 	public void RefreshRenderInfo()

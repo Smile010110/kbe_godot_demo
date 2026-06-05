@@ -2,15 +2,15 @@ using Godot;
 
 public interface IWorldEntityView
 {
+	int EntityId { get; }
 	WorldEntityKind EntityKind { get; }
 	bool IsTeammate { get; }
 	string DisplayName { get; }
 	string SecondaryInfoText { get; }
 	bool ShowSecondaryInfo { get; }
 	ulong HitPoints { get; }
+	ulong MaxHitPoints { get; }
 	ulong ManaPoints { get; }
-	uint Attack { get; }
-	uint Defense { get; }
 	byte RawMoveSpeed { get; }
 	float MoveSpeedUnits { get; }
 	Vector3 WorldPosition { get; }
@@ -43,6 +43,7 @@ public interface IWorldEntityController<TEntity> where TEntity : class
 
 public interface ISelectableWorldEntityController
 {
+	int SelectedEntityId { get; }
 	IWorldEntityView SelectedEntityView { get; }
 	CharacterBody3D SelectionBody { get; }
 }

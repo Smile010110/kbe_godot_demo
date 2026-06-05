@@ -22,6 +22,7 @@ namespace CommonData
 			EffectType = 1,
 			EffectValue = 1.0f,
 			CastDelayMs = 350,
+			AnimationKey = "attack",
 		};
 
 		private static readonly JsonSerializerOptions JsonOptions = new()
@@ -197,6 +198,9 @@ namespace CommonData
 		[JsonPropertyName("cast_delay_ms")]
 		public int CastDelayMs { get; set; }
 
+		[JsonPropertyName("animation_key")]
+		public string AnimationKey { get; set; } = string.Empty;
+
 		[JsonIgnore]
 		public string DisplayName => string.IsNullOrWhiteSpace(Name) ? $"Skill {Id}" : Name;
 
@@ -224,6 +228,7 @@ namespace CommonData
 		public void Normalize()
 		{
 			Name ??= string.Empty;
+			AnimationKey ??= string.Empty;
 			SkillType = Mathf.Max(0, SkillType);
 			CastType = Mathf.Max(0, CastType);
 			CostMp = Mathf.Max(0, CostMp);

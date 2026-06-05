@@ -1,6 +1,4 @@
 using Godot;
-using System;
-using System.Threading;
 using CommonData;
 using KBEngine;
 
@@ -12,7 +10,7 @@ public partial class App : GodotKBEMain
 
 	private bool _isShuttingDown;
 	private bool _isRecoveringFromDisconnect;
-	// 仅从主线程 / CallDeferred 回调中访问；Godot 单线程模式下无需同步。
+	private bool _isKbEngineRuntimeActive;
 	private string _pendingStatusMessage = string.Empty;
 
 	public KbeClient Client { get; private set; }
@@ -24,16 +22,27 @@ public partial class App : GodotKBEMain
 		SexConfigRepository.Warmup();
 		SkillConfigRepository.Warmup();
 		PlayerAppearanceConfigRepository.Warmup();
-		KBELog.Init(new GodotLogProvider());
+		KBELog.Init(new ClientKbeLogProvider());
 		ip = GameConfig.KbEngineHost;
 		port = GameConfig.KbEnginePort;
 		syncPlayerMS = ClientNetworkConfig.PlayerSyncIntervalMs;
-		serverHeartbeatTick = GameConfig.ServerHeartbeatTick;
+		// GodotKBEMain halves this value before passing it into KBEngineArgs.
+		serverHeartbeatTick = GameConfig.ServerHeartbeatTick * 2;
 		GetTree().AutoAcceptQuit = false;
 		base._Ready();
-		Client = new KbeClient();
-		Client.Bind();
-		Client.Disconnected += OnClientDisconnected;
+		_isKbEngineRuntimeActive = true;
+		BindClientFacade();
+	}
+
+	public override void KBEUpdate()
+	{
+		if (_isShuttingDown || !_isKbEngineRuntimeActive || gameapp == null || KBEngineApp.app == null)
+		{
+			KBEngine.Event.processOutEvents();
+			return;
+		}
+
+		base.KBEUpdate();
 	}
 
 	public override void _Notification(int what)
@@ -60,6 +69,32 @@ public partial class App : GodotKBEMain
 		base._ExitTree();
 	}
 
+	public string ConsumePendingStatusMessage()
+	{
+		var message = _pendingStatusMessage;
+		_pendingStatusMessage = string.Empty;
+		return message;
+	}
+
+	private void BindClientFacade()
+	{
+		Client = new KbeClient();
+		Client.Bind();
+		Client.Disconnected += OnClientDisconnected;
+	}
+
+	private void UnbindClientFacade()
+	{
+		if (Client == null)
+		{
+			return;
+		}
+
+		Client.Disconnected -= OnClientDisconnected;
+		Client.Dispose();
+		Client = null;
+	}
+
 	private void ShutdownKbEngineGracefully()
 	{
 		if (_isShuttingDown)
@@ -68,39 +103,9 @@ public partial class App : GodotKBEMain
 		}
 
 		_isShuttingDown = true;
-		if (Client != null)
-		{
-			Client.Disconnected -= OnClientDisconnected;
-		}
-
-		Client?.Dispose();
-		Client = null;
+		UnbindClientFacade();
 		ClientRuntimeState.ResetForSceneTransition();
-
-		if (KBEngineApp.app != null)
-		{
-			if (KBEngineApp.app.currserver == "baseapp")
-			{
-				KBEngineApp.app.logout();
-				FlushPendingNetwork();
-
-				// Prevent the generated destroy() from immediately sending a second logout.
-				KBEngineApp.app.currserver = string.Empty;
-			}
-
-			gameapp?.destroy();
-			KBEngineApp.app = null;
-		}
-
-		gameapp = null;
-		KBEngine.Event.clear();
-	}
-
-	public string ConsumePendingStatusMessage()
-	{
-		var message = _pendingStatusMessage;
-		_pendingStatusMessage = string.Empty;
-		return message;
+		DestroyKbEngineSession(sendLogout: true, clearEvents: true);
 	}
 
 	private void FlushPendingNetwork()
@@ -110,8 +115,7 @@ public partial class App : GodotKBEMain
 			return;
 		}
 
-		var deadline = DateTime.UtcNow.AddMilliseconds(500);
-		while (DateTime.UtcNow < deadline)
+		for (var i = 0; i < 3; i++)
 		{
 			if (!isMultiThreads)
 			{
@@ -119,7 +123,6 @@ public partial class App : GodotKBEMain
 			}
 
 			KBEngine.Event.processOutEvents();
-			Thread.Sleep(15);
 		}
 	}
 
@@ -143,7 +146,7 @@ public partial class App : GodotKBEMain
 		}
 
 		ClientRuntimeState.ResetForSceneTransition();
-		gameapp?.reset();
+		RestartKbEngineSession();
 		var error = GetTree().ChangeSceneToFile(StartScenePath);
 		if (error != Error.Ok)
 		{
@@ -151,5 +154,41 @@ public partial class App : GodotKBEMain
 		}
 
 		_isRecoveringFromDisconnect = false;
+	}
+
+	private void RestartKbEngineSession()
+	{
+		_isKbEngineRuntimeActive = false;
+		UnbindClientFacade();
+		DestroyKbEngineSession(sendLogout: false, clearEvents: false);
+		KBEngine.Event.clearFiredEvents();
+		initKBEngine();
+		_isKbEngineRuntimeActive = true;
+		BindClientFacade();
+	}
+
+	private void DestroyKbEngineSession(bool sendLogout, bool clearEvents)
+	{
+		_isKbEngineRuntimeActive = false;
+
+		if (KBEngineApp.app != null)
+		{
+			if (sendLogout && KBEngineApp.app.currserver == "baseapp")
+			{
+				KBEngineApp.app.logout();
+				FlushPendingNetwork();
+			}
+
+			// Avoid a second generated logout when the socket is already gone.
+			KBEngineApp.app.currserver = string.Empty;
+			gameapp?.destroy();
+			KBEngineApp.app = null;
+		}
+
+		gameapp = null;
+		if (clearEvents)
+		{
+			KBEngine.Event.clear();
+		}
 	}
 }

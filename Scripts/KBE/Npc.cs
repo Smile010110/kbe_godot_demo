@@ -22,9 +22,8 @@ public class Npc : NpcBase, IServerDrivenWorldEntity, IWorldEntityRenderHooks
 	public string SecondaryInfoText => RawMoveSpeed > 0 ? WorldEntityNameplateText.BuildSpeedOnlyLine(RawMoveSpeed) : string.Empty;
 	public bool ShowSecondaryInfo => !string.IsNullOrWhiteSpace(SecondaryInfoText);
 	public ulong HitPoints => 0UL;
+	public ulong MaxHitPoints => 0UL;
 	public ulong ManaPoints => 0UL;
-	public uint Attack => 0U;
-	public uint Defense => 0U;
 	public byte RawMoveSpeed => _protocolState.Motion.RawMoveSpeed;
 	public float MoveSpeedUnits => _protocolState.Motion.MoveSpeedUnits;
 	public Vector3 WorldPosition => _protocolState.WorldPosition;

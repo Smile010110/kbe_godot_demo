@@ -70,7 +70,7 @@ namespace CommonData
 				return CreateFallbackRoot();
 			}
 
-			var file = FileAccess.Open(ConfigPath, FileAccess.ModeFlags.Read);
+			using var file = FileAccess.Open(ConfigPath, FileAccess.ModeFlags.Read);
 			if (file == null)
 			{
 				GD.PushWarning($"Failed to open role config: {ConfigPath}");

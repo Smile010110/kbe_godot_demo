@@ -37,6 +37,8 @@ public sealed class WorldEntityRenderBinding<TEntity, TController>
 
 	public void WaitForWorld()
 	{
+		World.OnWorldReady -= HandleWorldReady;
+		World.OnWorldReady += HandleWorldReady;
 		_waitingForWorld = true;
 	}
 
@@ -102,6 +104,7 @@ public sealed class WorldEntityRenderBinding<TEntity, TController>
 
 	public void Cleanup()
 	{
+		World.OnWorldReady -= HandleWorldReady;
 		if (_owner.renderObj is Node node)
 		{
 			node.QueueFree();

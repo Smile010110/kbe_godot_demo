@@ -1,7 +1,7 @@
 using System;
 using KBEngine;
 
-public enum SkillEffectType
+public enum SkillEffectType : byte
 {
 	Unknown = 0,
 	Damage = 1,
@@ -21,12 +21,16 @@ public enum SkillErrorCode : byte
 
 public sealed class SkillCastResult
 {
+	private const ulong MillisecondsThreshold = 1_000_000_000_000UL;
+
 	public int SkillId { get; private set; }
-	public ulong CasterId { get; private set; }
-	public ulong TargetId { get; private set; }
+	public int CasterId { get; private set; }
+	public int TargetId { get; private set; }
 	public SkillEffectType EffectType { get; private set; }
 	public int Value { get; private set; }
 	public bool IsKill { get; private set; }
+	public ulong ResultTime { get; private set; }
+	public bool HasResultTime => ResultTime > 0UL;
 
 	public static SkillCastResult FromProtocol(SKILL_RESULT protocol)
 	{
@@ -40,12 +44,39 @@ public sealed class SkillCastResult
 			SkillId = (int)Math.Min(protocol.skill_id, int.MaxValue),
 			CasterId = protocol.caster_id,
 			TargetId = protocol.target_id,
-			EffectType = Enum.IsDefined(typeof(SkillEffectType), protocol.effect_type)
-				? (SkillEffectType)protocol.effect_type
-				: SkillEffectType.Unknown,
+			EffectType = ResolveEffectType(protocol.effect_type),
 			Value = (int)Math.Min(protocol.value, int.MaxValue),
 			IsKill = protocol.is_kill != 0,
+			ResultTime = protocol.cast_time,
 		};
+	}
+
+	private static SkillEffectType ResolveEffectType(byte effectType)
+	{
+		return effectType switch
+		{
+			(byte)SkillEffectType.Damage => SkillEffectType.Damage,
+			(byte)SkillEffectType.Heal => SkillEffectType.Heal,
+			_ => SkillEffectType.Unknown,
+		};
+	}
+
+	public double ResolveElapsedResultSeconds(ulong currentServerTime)
+	{
+		if (ResultTime == 0UL || currentServerTime == 0UL)
+		{
+			return 0.0d;
+		}
+
+		var elapsedSeconds = NormalizeServerTimeSeconds(currentServerTime) - NormalizeServerTimeSeconds(ResultTime);
+		return elapsedSeconds > 0.0d ? elapsedSeconds : 0.0d;
+	}
+
+	private static double NormalizeServerTimeSeconds(ulong serverTime)
+	{
+		return serverTime >= MillisecondsThreshold
+			? serverTime / 1000.0d
+			: serverTime;
 	}
 }
 
@@ -63,10 +94,21 @@ public sealed class SkillCastError
 
 	public static SkillCastError FromProtocol(uint skillId, byte errorCode)
 	{
-		var typedCode = Enum.IsDefined(typeof(SkillErrorCode), errorCode)
-			? (SkillErrorCode)errorCode
-			: SkillErrorCode.SkillNotFound;
-		return new SkillCastError((int)Math.Min(skillId, int.MaxValue), typedCode);
+		return new SkillCastError((int)Math.Min(skillId, int.MaxValue), ResolveErrorCode(errorCode));
+	}
+
+	private static SkillErrorCode ResolveErrorCode(byte errorCode)
+	{
+		return errorCode switch
+		{
+			(byte)SkillErrorCode.CooldownNotReady => SkillErrorCode.CooldownNotReady,
+			(byte)SkillErrorCode.NotEnoughMp => SkillErrorCode.NotEnoughMp,
+			(byte)SkillErrorCode.OutOfRange => SkillErrorCode.OutOfRange,
+			(byte)SkillErrorCode.InvalidTarget => SkillErrorCode.InvalidTarget,
+			(byte)SkillErrorCode.CasterDead => SkillErrorCode.CasterDead,
+			(byte)SkillErrorCode.Casting => SkillErrorCode.Casting,
+			_ => SkillErrorCode.SkillNotFound,
+		};
 	}
 
 	public static string ResolveMessage(SkillErrorCode errorCode)

@@ -5,6 +5,7 @@ public static class ClientRuntimeState
 		MainUi.ResetStaticState();
 		Player.ResetStaticState();
 		PlayerController.ResetStaticState();
+		SkillClientRuntime.ResetStaticState();
 		World.ResetStaticState();
 	}
 }
