@@ -1,5 +1,4 @@
 using System;
-using KBEngine;
 
 public enum SkillEffectType : byte
 {
@@ -29,25 +28,27 @@ public sealed class SkillCastResult
 	public SkillEffectType EffectType { get; private set; }
 	public int Value { get; private set; }
 	public bool IsKill { get; private set; }
-	public ulong ResultTime { get; private set; }
-	public bool HasResultTime => ResultTime > 0UL;
+	public ulong CastTime { get; private set; }
+	public bool HasCastTime => CastTime > 0UL;
 
-	public static SkillCastResult FromProtocol(SKILL_RESULT protocol)
+	public static SkillCastResult FromValues(
+		uint skillId,
+		int casterId,
+		int targetId,
+		byte effectType,
+		uint value,
+		byte isKill,
+		ulong castTime)
 	{
-		if (protocol == null)
-		{
-			return null;
-		}
-
 		return new SkillCastResult
 		{
-			SkillId = (int)Math.Min(protocol.skill_id, int.MaxValue),
-			CasterId = protocol.caster_id,
-			TargetId = protocol.target_id,
-			EffectType = ResolveEffectType(protocol.effect_type),
-			Value = (int)Math.Min(protocol.value, int.MaxValue),
-			IsKill = protocol.is_kill != 0,
-			ResultTime = protocol.cast_time,
+			SkillId = (int)Math.Min(skillId, int.MaxValue),
+			CasterId = casterId,
+			TargetId = targetId,
+			EffectType = ResolveEffectType(effectType),
+			Value = (int)Math.Min(value, int.MaxValue),
+			IsKill = isKill != 0,
+			CastTime = castTime,
 		};
 	}
 
@@ -61,14 +62,14 @@ public sealed class SkillCastResult
 		};
 	}
 
-	public double ResolveElapsedResultSeconds(ulong currentServerTime)
+	public double ResolveElapsedCastSeconds(ulong currentServerTime)
 	{
-		if (ResultTime == 0UL || currentServerTime == 0UL)
+		if (CastTime == 0UL || currentServerTime == 0UL)
 		{
 			return 0.0d;
 		}
 
-		var elapsedSeconds = NormalizeServerTimeSeconds(currentServerTime) - NormalizeServerTimeSeconds(ResultTime);
+		var elapsedSeconds = NormalizeServerTimeSeconds(currentServerTime) - NormalizeServerTimeSeconds(CastTime);
 		return elapsedSeconds > 0.0d ? elapsedSeconds : 0.0d;
 	}
 

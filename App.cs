@@ -20,6 +20,8 @@ public partial class App : GodotKBEMain
 		Instance = this;
 		RoleConfigRepository.Warmup();
 		SexConfigRepository.Warmup();
+		AttrConfigRepository.Warmup();
+		BuffConfigRepository.Warmup();
 		SkillConfigRepository.Warmup();
 		PlayerAppearanceConfigRepository.Warmup();
 		KBELog.Init(new ClientKbeLogProvider());

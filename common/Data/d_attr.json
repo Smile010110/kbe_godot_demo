@@ -1,0 +1,76 @@
+{
+  "allDatas": {
+    "datas": {
+      "1": {
+        "id": 1,
+        "key": "hp",
+        "name": "当前生命",
+        "client_show": 1,
+        "desc": "运行时状态值，不建议作为Buff属性加成目标"
+      },
+      "2": {
+        "id": 2,
+        "key": "mp",
+        "name": "当前法力",
+        "client_show": 1,
+        "desc": "运行时状态值，不建议作为Buff属性加成目标"
+      },
+      "101": {
+        "id": 101,
+        "key": "max_hp",
+        "name": "最大生命",
+        "client_show": 1,
+        "desc": "Buff可加成；变化后刷新HP上限"
+      },
+      "102": {
+        "id": 102,
+        "key": "max_mp",
+        "name": "最大法力",
+        "client_show": 1,
+        "desc": "Buff可加成；变化后刷新MP上限"
+      },
+      "201": {
+        "id": 201,
+        "key": "attack",
+        "name": "攻击",
+        "client_show": 1,
+        "desc": "伤害计算基础属性"
+      },
+      "202": {
+        "id": 202,
+        "key": "defense",
+        "name": "防御",
+        "client_show": 1,
+        "desc": "承伤计算基础属性"
+      },
+      "301": {
+        "id": 301,
+        "key": "r_hit_rate",
+        "name": "命中率",
+        "client_show": 1,
+        "desc": "万分比，10000=100%"
+      },
+      "302": {
+        "id": 302,
+        "key": "r_dodge_rate",
+        "name": "闪避率",
+        "client_show": 1,
+        "desc": "万分比，10000=100%"
+      },
+      "303": {
+        "id": 303,
+        "key": "r_crit_rate",
+        "name": "暴击率",
+        "client_show": 1,
+        "desc": "万分比，10000=100%"
+      },
+      "304": {
+        "id": 304,
+        "key": "r_crit_damage",
+        "name": "暴击伤害",
+        "client_show": 1,
+        "desc": "万分比，15000=150%"
+      }
+    }
+  }
+}

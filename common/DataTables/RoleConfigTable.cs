@@ -143,6 +143,9 @@ namespace CommonData
 		[JsonPropertyName("name")]
 		public string Name { get; set; } = string.Empty;
 
+		[JsonPropertyName("attr_template_id")]
+		public int AttrTemplateId { get; set; }
+
 		[JsonIgnore]
 		public string DisplayName
 		{
@@ -156,6 +159,7 @@ namespace CommonData
 		public void Normalize()
 		{
 			var roleValue = Role != 0 ? Role : Id;
+			AttrTemplateId = Mathf.Max(0, AttrTemplateId);
 			if (roleValue == 1 && (string.IsNullOrWhiteSpace(Name) || Name.StartsWith("鎴", StringComparison.Ordinal)))
 			{
 				Name = "战士";

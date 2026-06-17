@@ -65,7 +65,6 @@ namespace CommonData
 		{
 			if (!FileAccess.FileExists(ConfigPath))
 			{
-				GD.PushWarning($"Player appearance config not found: {ConfigPath}");
 				return CreateFallbackRoot();
 			}
 

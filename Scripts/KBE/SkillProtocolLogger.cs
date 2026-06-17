@@ -1,18 +1,17 @@
 using Godot;
-using KBEngine;
 
 public static class SkillProtocolLogger
 {
 	public static bool Enabled { get; set; }
 
-	public static void LogResult(string receiverType, int receiverEntityId, SKILL_RESULT protocolResult)
+	public static void LogResult(string receiverType, int receiverEntityId, SkillCastResult result)
 	{
-		// if (!Enabled)
-		// {
-		// 	return;
-		// }
+		if (!Enabled)
+		{
+			return;
+		}
 
-		if (protocolResult == null)
+		if (result == null)
 		{
 			GD.Print($"[SkillResultRaw] receiver={receiverType}({receiverEntityId}) result=null");
 			return;
@@ -20,13 +19,13 @@ public static class SkillProtocolLogger
 
 		GD.Print(
 			$"[SkillResultRaw] receiver={receiverType}({receiverEntityId}) "
-			+ $"skill_id={protocolResult.skill_id} "
-			+ $"caster_id={protocolResult.caster_id} "
-			+ $"target_id={protocolResult.target_id} "
-			+ $"effect_type={protocolResult.effect_type} "
-			+ $"value={protocolResult.value} "
-			+ $"is_kill={protocolResult.is_kill} "
-			+ $"result_time={protocolResult.cast_time}"
+			+ $"skill_id={result.SkillId} "
+			+ $"caster_id={result.CasterId} "
+			+ $"target_id={result.TargetId} "
+			+ $"effect_type={result.EffectType} "
+			+ $"value={result.Value} "
+			+ $"is_kill={result.IsKill} "
+			+ $"cast_time={result.CastTime}"
 		);
 	}
 

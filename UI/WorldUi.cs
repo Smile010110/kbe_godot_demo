@@ -4,6 +4,10 @@ using Godot;
 
 public partial class WorldUi : Control
 {
+	private const float TargetPanelBaseHeight = 72.0f;
+	private const float TargetPanelBuffHeight = 96.0f;
+	private const float TargetHpBarMarginTop = 4.0f;
+
 	private Label _infoLabel;
 	private Panel _targetInfoPanel;
 	private Label _targetNameLabel;
@@ -24,6 +28,7 @@ public partial class WorldUi : Control
 		_targetInfoPanel = GetNode<Panel>("TargetInfoPanel");
 		_targetNameLabel = GetNode<Label>("TargetInfoPanel/TargetNameLabel");
 		_targetHpLabel = GetNode<Label>("TargetInfoPanel/TargetHPLabel");
+		_targetHpLabel.AutowrapMode = TextServer.AutowrapMode.WordSmart;
 		_targetHpBar = EnsureTargetHpBar();
 		_skillButtonContainer = GetNode<HBoxContainer>("SkillBarPanel/SkillButtonContainer");
 		PopulateSkillButtons();
@@ -78,13 +83,16 @@ public partial class WorldUi : Control
 	private static string BuildSkillTooltip(SkillConfigEntry skill)
 	{
 		var effectText = skill.IsHealSkill ? "治疗" : "伤害";
-		return $"MP {skill.CostMp} | CD {skill.CooldownSeconds:0.#}s | Delay {skill.CastDelaySeconds:0.##}s | Range {skill.RangeMax:0.#} | {effectText} x{skill.EffectValue:0.#}";
+		var targetText = skill.CanCastWithoutTarget ? "No target" : $"Range {skill.RangeMax:0.#}";
+		var aoeText = skill.IsAoeSkill ? $" | AOE type {skill.AoeType} r{skill.AoeRadius:0.#}" : string.Empty;
+		return $"MP {skill.CostMp} | CD {skill.CooldownSeconds:0.#}s | Delay {skill.CastDelaySeconds:0.##}s | {targetText} | {effectText} x{skill.EffectValue:0.#}{aoeText}";
 	}
 
 	private void RefreshSkillButtons()
 	{
 		var playerController = PlayerController.LocalInstance;
 		var hasLocalPlayer = playerController?.Player != null;
+		var canRequestSkills = playerController?.CanRequestSkills == true;
 		foreach (var pair in _skillButtons)
 		{
 			var button = pair.Key;
@@ -93,7 +101,7 @@ public partial class WorldUi : Control
 			button.Text = cooldownRemaining > 0.0f
 				? $"{skill.Id}. {skill.DisplayName} ({cooldownRemaining:0.0})"
 				: $"{skill.Id}. {skill.DisplayName}";
-			button.Disabled = !hasLocalPlayer || cooldownRemaining > 0.0f || playerController?.IsSkillCastLocked == true;
+			button.Disabled = !hasLocalPlayer || !canRequestSkills || cooldownRemaining > 0.0f || playerController?.IsSkillCastLocked == true;
 		}
 	}
 
@@ -110,6 +118,7 @@ public partial class WorldUi : Control
 		var moveSpeed = player != null ? player.RawMoveSpeed.ToString() : "-";
 		var hp = player != null ? player.HitPoints.ToString() : "-";
 		var mp = player != null ? player.ManaPoints.ToString() : "-";
+		var buffs = string.IsNullOrWhiteSpace(player?.BuffSummaryText) ? "-" : player.BuffSummaryText;
 		var position = player?.WorldPosition ?? Vector3.Zero;
 		var positionText = player != null
 			? $"({position.X:0.00}, {position.Y:0.00}, {position.Z:0.00})"
@@ -118,7 +127,7 @@ public partial class WorldUi : Control
 		var animationKey = playerController != null ? playerController.CurrentAnimationKey : "-";
 		var skillCast = playerController != null ? playerController.LastSkillCastSummary : "-";
 
-		var nextInfoText = $"WASD move\nSpace jump\nHold RMB to rotate camera\nEntity: {entityId}\nDBID: {dbid}\nServer: {serverId}\nServerTime: {serverTime}\nSpaceUType: {spaceUtype}\nSpaceLine: {spaceLine}\nPosition: {positionText}\nMoveSpeed: {moveSpeed}\nHP: {hp}\nMP: {mp}\nAnimState: {animationState}\nAnimKey: {animationKey}\nSkillCast: {skillCast}";
+		var nextInfoText = $"WASD move\nSpace jump\nHold RMB to rotate camera\nEntity: {entityId}\nDBID: {dbid}\nServer: {serverId}\nServerTime: {serverTime}\nSpaceUType: {spaceUtype}\nSpaceLine: {spaceLine}\nPosition: {positionText}\nMoveSpeed: {moveSpeed}\nHP: {hp}\nMP: {mp}\nBuffs: {buffs}\nAnimState: {animationState}\nAnimKey: {animationKey}\nSkillCast: {skillCast}";
 		if (!force && string.Equals(_lastInfoText, nextInfoText, System.StringComparison.Ordinal))
 		{
 			return;
@@ -130,7 +139,8 @@ public partial class WorldUi : Control
 
 	private void RefreshTargetInfo(bool force = false)
 	{
-		var target = PlayerController.LocalInstance?.SelectedTarget;
+		var playerController = PlayerController.LocalInstance;
+		var target = playerController?.SelectedTarget;
 		if (target == null || target is not GodotObject targetObject || !IsInstanceValid(targetObject))
 		{
 			HideTargetInfo();
@@ -153,12 +163,14 @@ public partial class WorldUi : Control
 		}
 
 		var name = entity.DisplayName ?? "???";
+		var distanceText = ResolveTargetDistanceText(playerController, target, entity);
+		var buffText = string.IsNullOrWhiteSpace(entity.BuffSummaryText) ? string.Empty : $"\nBuffs {entity.BuffSummaryText}";
 		var hpText = entity.MaxHitPoints == 0UL
-			? (string.IsNullOrWhiteSpace(entity.SecondaryInfoText) ? "NPC" : entity.SecondaryInfoText)
-			: $"HP {entity.HitPoints}/{entity.MaxHitPoints} | MP {entity.ManaPoints}";
+			? $"{(string.IsNullOrWhiteSpace(entity.SecondaryInfoText) ? "NPC" : entity.SecondaryInfoText)} | Dist {distanceText}"
+			: $"HP {entity.HitPoints}/{entity.MaxHitPoints} | MP {entity.ManaPoints} | Dist {distanceText}";
+		hpText += buffText;
 
 		_targetInfoPanel.Visible = true;
-		RefreshTargetHpBar(entity);
 
 		if (force || _lastTargetName != name)
 		{
@@ -171,6 +183,43 @@ public partial class WorldUi : Control
 			_lastTargetHpText = hpText;
 			_targetHpLabel.Text = hpText;
 		}
+
+		UpdateTargetInfoLayout(hasBuffs: !string.IsNullOrEmpty(buffText));
+		RefreshTargetHpBar(entity);
+	}
+
+	private static string ResolveTargetDistanceText(
+		PlayerController playerController,
+		ISelectableWorldEntityController target,
+		IWorldEntityView targetEntity)
+	{
+		if (!TryResolveWorldPosition(playerController?.SelectionBody, playerController?.Player?.WorldPosition, out var playerPosition)
+			|| !TryResolveWorldPosition(target?.SelectionBody, targetEntity?.WorldPosition, out var targetPosition))
+		{
+			return "-";
+		}
+
+		var planarDelta = targetPosition - playerPosition;
+		planarDelta.Y = 0.0f;
+		return $"{planarDelta.Length():0.00}";
+	}
+
+	private static bool TryResolveWorldPosition(Node3D body, Vector3? fallbackPosition, out Vector3 position)
+	{
+		if (body != null && IsInstanceValid(body))
+		{
+			position = body.GlobalPosition;
+			return true;
+		}
+
+		if (fallbackPosition.HasValue)
+		{
+			position = fallbackPosition.Value;
+			return true;
+		}
+
+		position = Vector3.Zero;
+		return false;
 	}
 
 	private void HideTargetInfo()
@@ -210,10 +259,38 @@ public partial class WorldUi : Control
 			MouseFilter = MouseFilterEnum.Ignore,
 		};
 		bar.SetAnchorsPreset(LayoutPreset.TopLeft);
-		bar.Position = new Vector2(_targetHpLabel.Position.X, _targetHpLabel.Position.Y + _targetHpLabel.Size.Y + 4.0f);
+		UpdateTargetHpBarPosition(bar);
 		bar.Visible = false;
 		_targetInfoPanel.AddChild(bar);
 		return bar;
+	}
+
+	private void UpdateTargetInfoLayout(bool hasBuffs)
+	{
+		var panelSize = _targetInfoPanel.Size;
+		panelSize.Y = hasBuffs ? TargetPanelBuffHeight : TargetPanelBaseHeight;
+		_targetInfoPanel.Size = panelSize;
+
+		var labelSize = _targetHpLabel.Size;
+		labelSize.Y = hasBuffs ? 44.0f : 26.0f;
+		_targetHpLabel.Size = labelSize;
+
+		if (_targetHpBar != null && IsInstanceValid(_targetHpBar))
+		{
+			UpdateTargetHpBarPosition(_targetHpBar);
+		}
+	}
+
+	private void UpdateTargetHpBarPosition(Control bar)
+	{
+		if (bar == null)
+		{
+			return;
+		}
+
+		bar.Position = new Vector2(
+			_targetHpLabel.Position.X,
+			_targetHpLabel.Position.Y + _targetHpLabel.Size.Y + TargetHpBarMarginTop);
 	}
 
 	private void RefreshTargetHpBar(IWorldEntityView entity)

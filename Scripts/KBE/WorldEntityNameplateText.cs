@@ -1,17 +1,22 @@
 public static class WorldEntityNameplateText
 {
-	public static string BuildCombatMotionLine(ulong hp, ulong mp, byte moveSpeed)
+	public static string BuildCombatMotionLine(ulong hp, ulong maxHp, ulong mp, byte moveSpeed, int activeBuffCount = 0)
 	{
-		return $"HP {hp} | MP {mp} | SPD {moveSpeed}";
+		return AppendBuffCount($"HP {hp}/{maxHp} | MP {mp} | SPD {moveSpeed}", activeBuffCount);
 	}
 
-	public static string BuildPlayerLine(ulong hp, ulong mp, byte moveSpeed)
+	public static string BuildPlayerLine(ulong hp, ulong maxHp, ulong mp, byte moveSpeed, int activeBuffCount = 0)
 	{
-		return $"HP {hp} | MP {mp} | SPD {moveSpeed}";
+		return AppendBuffCount($"HP {hp}/{maxHp} | MP {mp} | SPD {moveSpeed}", activeBuffCount);
 	}
 
 	public static string BuildSpeedOnlyLine(byte moveSpeed)
 	{
 		return $"SPD {moveSpeed}";
+	}
+
+	private static string AppendBuffCount(string baseText, int activeBuffCount)
+	{
+		return activeBuffCount > 0 ? $"{baseText}\nBuff {activeBuffCount}" : baseText;
 	}
 }

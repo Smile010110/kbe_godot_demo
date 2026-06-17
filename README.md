@@ -1,9 +1,19 @@
 # Godot KBEngine Demo
 
 Godot version: `4.4.1 mono`  
-KBEngine branch used by this client: `dev-2.6.x`
+KBEngine client SDK: generated C# SDK under `kbe_csharp_plugins/`
 
-This repository is a Godot client demo wired to a KBEngine-generated C# SDK.
+This repository is a Godot C# client demo wired to KBEngine. It handles login, entity lifecycle, server-driven world entities, local movement presentation, target selection, skill UI scaffolding, and server-synchronized combat/buff display.
+
+## Build
+
+From the repository root:
+
+```powershell
+dotnet build demo1.sln --no-restore
+```
+
+Warnings from generated SDK files under `kbe_csharp_plugins/` are expected.
 
 ## Source Of Truth
 
@@ -15,6 +25,14 @@ Rules:
 - Do not patch generated `*Base.cs`, `EntityDef.cs`, or engine helper files by hand.
 - When the server protocol changes, regenerate `kbe_csharp_plugins/` first, then adapt the handwritten layer.
 
+Server reference path used during client adaptation:
+
+```text
+D:\UGit\KBEngine\base_assets
+```
+
+Treat the server reference as read-only from this workspace.
+
 ## Layer Boundary
 
 Generated layer:
@@ -23,40 +41,17 @@ Generated layer:
 
 Handwritten KBEngine integration layer:
 
-- [App.cs](/d:/UGit/kbe_godot_demo/App.cs)
+- `App.cs`
 - `Scripts/KBE/`
-
-Protocol adapter boundary inside the handwritten layer:
-
 - `Scripts/KBE/Protocol/`
-- wraps generated protocol structs such as `KBVector2`, `KBVector3`, `KBVector4`
-- is the only handwritten area that should translate between generated protocol values and business-facing objects
-
-Core handwritten world-entity primitives:
-
-- `IWorldEntityView`
-- `ILocallyControlledWorldEntity`
-- `IServerDrivenWorldEntity`
-- `IWorldEntityRenderHooks`
-- `WorldEntityKind`
-- `WorldEntityNameplateStyleResolver`
-- `WorldEntitySceneRegistry`
-- `WorldEntityRenderBinding<TEntity, TController>`
-- `WorldEntityControllerBase<TEntity>`
-
-`WorldEntityRenderBinding<TEntity, TController>` owns the handwritten world-facing entity lifecycle:
-
-- subscribe to `World.OnWorldReady`
-- wait for world bootstrap when scenes switch
-- create or bind the presentation node
-- clean up render nodes on leave/destroy
+- `Scripts/KBE/Components/`
 
 Presentation and game-facing layer:
 
-- `UI/`
 - `Prefab/`
-- [World.cs](/d:/UGit/kbe_godot_demo/World.cs)
-- `Scripts/*.gd`
+- `UI/`
+- `World.cs`
+- `Scripts/`
 - `common/`
 
 Client data tables:
@@ -64,67 +59,130 @@ Client data tables:
 - `common/Data/`
 - `common/DataTables/`
 
-Current appearance/config tables:
-
-- `common/Data/d_role.json`
-- `common/Data/d_sex.json`
-- `common/Data/player_model_profiles.json`
-
-Runtime tuning that should stay in the handwritten layer:
-
-- `GameConfig`
-- `ClientNetworkConfig`
-- `RemoteEntitySyncConfig`
-- `RemotePlayerSyncConfig`
-
-Only the handwritten KBEngine integration layer should reference:
-
-- `using KBEngine`
-- `KBEngineApp`
-- `KBEngine.Event`
-- generated entity/component base classes such as `PlayerBase`, `CombatBase`, `MotionBase`
-- generated protocol structs such as `KBVector3`
-
-Within `Scripts/KBE/`, business-facing entity logic should prefer the protocol adapters under `Scripts/KBE/Protocol/` instead of reading generated structs directly.
-
-`UI/`, `Prefab/`, and other presentation code should only talk to handwritten wrappers such as:
-
-- `App.Client`
-- `Player`
-- handwritten adapter methods and properties exposed from `Scripts/KBE/`
+Only the handwritten KBEngine integration layer should reference generated KBEngine details such as `KBEngineApp`, generated entity base classes, generated component base classes, and generated protocol structs. UI and prefab code should talk through handwritten contracts and wrappers.
 
 ## Current Client Flow
 
-`autoload App -> MainUi -> local Player -> World`
+```text
+autoload App
+  -> Start.tscn
+  -> MainUi login / character creation
+  -> local Player entity enters world
+  -> MainUi switches to World.tscn
+  -> World.OnWorldReady binds waiting render nodes
+  -> server-created Player / Monster / Npc entities render through Prefab controllers
+```
 
-Only the local controlled `Player` is allowed to trigger world bootstrap.
-Server-created entities such as `Monster` are spawned directly from world sync and do not participate in login flow.
-`Npc` follows the same server-driven path.
+`App.cs` owns:
 
-Current generated entities/modules in use:
+- config warmup
+- KBEngine startup
+- `KbeClient` event binding
+- graceful shutdown
+- disconnect recovery back to `Start.tscn`
 
-- `Player`
-- `Monster`
-- `Npc`
-- `GameMgr`
-- `Server`
-- `Space`
-- `WebServer`
+`WorldEntityRenderBinding<TEntity, TController>` owns the bridge from server entity lifecycle to Godot scene nodes.
+
+## Entity Model
+
+Current world entities:
+
+- `Player`: local or remote player entity. Reads combat, motion, role, sex, server time, and buff state from generated fields.
+- `Monster`: server-driven hostile entity. Reads combat, motion, and buff state.
+- `Npc`: server-driven non-combat entity. Reads motion state.
+
+Shared contracts live in `Scripts/KBE/WorldEntityContracts.cs`:
+
+- `IWorldEntityView`
+- `ILocallyControlledWorldEntity`
+- `IServerDrivenWorldEntity`
+- `IWorldEntityRenderHooks`
+- `ISelectableWorldEntityController`
+- `ISkillCastPresentationController`
+
+Protocol adapters live under `Scripts/KBE/Protocol/`:
+
+- vectors: `KbeProtocolVectors.cs`
+- entity state: `KbeProtocolState.cs`
+- buff datatypes: `KbeProtocolBuffs.cs`
+
+## Config Tables
+
+Current JSON tables:
+
+- `common/Data/d_attr.json`
+- `common/Data/d_buff.json`
+- `common/Data/d_role.json`
+- `common/Data/d_sex.json`
+- `common/Data/d_skill.json`
+
+Current repositories:
+
+- `AttrConfigRepository`
+- `BuffConfigRepository`
+- `RoleConfigRepository`
+- `SexConfigRepository`
+- `SkillConfigRepository`
+- `PlayerAppearanceConfigRepository`
+
+`PlayerAppearanceConfigRepository` now uses a built-in fallback when `player_model_profiles.json` is absent.
+
+## Skills
+
+The client has skill UI and presentation scaffolding:
+
+- dynamic skill buttons from `d_skill.json`
+- local cooldown and global cooldown display
+- MP, range, target, and pending-cast checks
+- support for `cast_without_target`
+- AOE fields loaded for display and future behavior
+- floating text dispatch for server results
+
+Current protocol caveat:
+
+- Skill requests are gated by `Player.CanCastSkills`.
+- If the generated `PlayerBase` does not expose a usable skill cell call, skill buttons remain disabled and no fake local request is sent.
+
+Current `d_skill.json` fields include:
+
+- `cast_without_target`
+- `aoe_type`
+- `aoe_radius`
+- `aoe_angle`
+- `aoe_width`
+- `aoe_length`
+
+The latest uploaded skill table does not include `animation_key`, so skill animation currently falls back to action state, such as attack or cast.
+
+## Buffs
+
+The server syncs buffs through entity-level `buff_list` on `Player` and `Monster`.
+
+Generated protocol:
+
+- `BUFF_INFO`: `buff_key`, `buff_id`, `level`, `duration`, `remain_time`, `stack`
+- `BUFF_LIST`: `values`
+
+Client behavior:
+
+- `KbeProtocolBuffs.cs` converts generated values into `KbeBuffState`.
+- Protocol `duration` and `remain_time` are milliseconds.
+- UI summaries display remaining time in rounded-up seconds.
+- Buff names come from `d_buff.json`.
+- Buff attribute names come from `d_attr.json`.
+- Head info shows buff count; HUD and target panels show compact summaries.
 
 ## Protocol Update Workflow
 
-1. Regenerate the client SDK into `kbe_csharp_plugins/`.
-2. Review generated changes in `PlayerBase`, component bases, and entity defs.
-3. Update handwritten adapters in `Scripts/KBE/`.
-4. Update UI or prefabs only through handwritten wrapper APIs.
-5. Build the main project and verify the client manually.
+1. Regenerate `kbe_csharp_plugins/` from the server.
+2. Inspect generated `*Base.cs`, `EntityDef.cs`, component lists, method signatures, and custom datatypes.
+3. Update adapters and wrappers in `Scripts/KBE/`.
+4. Update config repositories in `common/DataTables/` if JSON schema changed.
+5. Update UI/prefabs only through handwritten wrapper APIs.
+6. Build with `dotnet build demo1.sln --no-restore`.
 
-## SDK Generation
+## Notes
 
-Example:
-
-```bat
-start "" "%KBE_BIN_PATH%/kbcmd.exe" --clientsdk=csharp --outpath="%~dp0/kbe_csharp_plugins"
-```
-
-After generation, replace the local `kbe_csharp_plugins/` directory contents with the newly generated files.
+- The repository may have a dirty worktree during development. Do not discard unrelated changes.
+- Generated SDK warnings are expected; handwritten warnings should be treated as issues.
+- `common/DataTables/*.cs.uid` files may be generated by Godot for new scripts when the editor imports them.

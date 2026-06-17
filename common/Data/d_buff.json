@@ -1,0 +1,175 @@
+{
+  "allDatas": {
+    "datas": {
+      "1001": {
+        "id": 1001,
+        "name": "攻击祝福",
+        "duration": 10000,
+        "max_stack": 3,
+        "stack_rule": 3,
+        "attrs": {
+          "201": 20
+        },
+        "desc": "每层增加20点攻击，最多3层，重复添加刷新持续时间"
+      },
+      "1002": {
+        "id": 1002,
+        "name": "生命祝福",
+        "duration": 10000,
+        "max_stack": 1,
+        "stack_rule": 2,
+        "attrs": {
+          "101": 100
+        },
+        "desc": "增加100点最大生命，重复添加只刷新持续时间"
+      },
+      "1003": {
+        "id": 1003,
+        "name": "铁壁光环",
+        "duration": 15000,
+        "max_stack": 1,
+        "stack_rule": 1,
+        "attrs": {
+          "202": 30
+        },
+        "desc": "增加30点防御。replace规则下新Buff完全覆盖旧Buff，重新开始计时"
+      },
+      "1004": {
+        "id": 1004,
+        "name": "狂暴",
+        "duration": 8000,
+        "max_stack": 5,
+        "stack_rule": 3,
+        "attrs": {
+          "201": 50,
+          "301": -2000
+        },
+        "desc": "每层增加50攻击、降低20%命中率(万分比)。高风险高回报"
+      },
+      "1005": {
+        "id": 1005,
+        "name": "法力源泉",
+        "duration": 30000,
+        "max_stack": 1,
+        "stack_rule": 2,
+        "attrs": {
+          "102": 200
+        },
+        "desc": "增加200点最大法力，重复添加刷新持续时间"
+      },
+      "1006": {
+        "id": 1006,
+        "name": "精准",
+        "duration": 12000,
+        "max_stack": 3,
+        "stack_rule": 3,
+        "attrs": {
+          "301": 1000
+        },
+        "desc": "每层增加10%命中率(万分比)，最多3层"
+      },
+      "1007": {
+        "id": 1007,
+        "name": "灵巧",
+        "duration": 10000,
+        "max_stack": 1,
+        "stack_rule": 1,
+        "attrs": {
+          "302": 2000
+        },
+        "desc": "增加20%闪避率(万分比)。replace规则下重复添加会重置持续时间"
+      },
+      "1008": {
+        "id": 1008,
+        "name": "致命节奏",
+        "duration": 15000,
+        "max_stack": 3,
+        "stack_rule": 3,
+        "attrs": {
+          "303": 1500
+        },
+        "desc": "每层增加15%暴击率(万分比)，最多3层"
+      },
+      "1009": {
+        "id": 1009,
+        "name": "坚毅体质",
+        "duration": 0,
+        "max_stack": 1,
+        "stack_rule": 1,
+        "attrs": {
+          "101": 500,
+          "202": 50
+        },
+        "desc": "永久Buff(duration=0)，增加500最大生命和50防御。replace规则下新Buff覆盖旧Buff"
+      },
+      "2001": {
+        "id": 2001,
+        "name": "腐蚀",
+        "duration": 8000,
+        "max_stack": 5,
+        "stack_rule": 3,
+        "attrs": {
+          "202": -20
+        },
+        "desc": "每层降低20点防御(Debuff)，最多5层"
+      },
+      "2002": {
+        "id": 2002,
+        "name": "虚弱",
+        "duration": 10000,
+        "max_stack": 1,
+        "stack_rule": 1,
+        "attrs": {
+          "201": -30
+        },
+        "desc": "降低30点攻击(Debuff)。replace规则下重复添加重置持续时间"
+      },
+      "2003": {
+        "id": 2003,
+        "name": "致盲",
+        "duration": 5000,
+        "max_stack": 1,
+        "stack_rule": 1,
+        "attrs": {
+          "301": -5000
+        },
+        "desc": "降低50%命中率(Debuff)。replace规则下新Buff完全覆盖旧Buff"
+      },
+      "3001": {
+        "id": 3001,
+        "name": "圣光庇护",
+        "duration": 20000,
+        "max_stack": 1,
+        "stack_rule": 2,
+        "attrs": {
+          "101": 300,
+          "202": 40,
+          "302": 500
+        },
+        "desc": "复合属性Buff：增加300最大生命、40防御、5%闪避率"
+      },
+      "3002": {
+        "id": 3002,
+        "name": "战神降临",
+        "duration": 10000,
+        "max_stack": 1,
+        "stack_rule": 1,
+        "attrs": {
+          "201": 100,
+          "303": 3000,
+          "301": 2000
+        },
+        "desc": "复合属性Buff：增加100攻击、30%暴击率、20%命中率。强力但短持续"
+      },
+      "9001": {
+        "id": 9001,
+        "name": "测试buff",
+        "duration": 7000,
+        "max_stack": 1,
+        "stack_rule": 1,
+        "attrs": {},
+        "desc": "测试"
+      }
+    }
+  }
+}

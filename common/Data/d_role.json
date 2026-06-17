@@ -3,7 +3,8 @@
     "datas": {
       "1": {
         "role": 1,
-        "name": "战士"
+        "name": "战士",
+        "attr_template_id": 1
       }
     }
   }

@@ -22,7 +22,12 @@ namespace CommonData
 			EffectType = 1,
 			EffectValue = 1.0f,
 			CastDelayMs = 350,
-			AnimationKey = "attack",
+			CastWithoutTarget = 0,
+			AoeType = 0,
+			AoeRadius = 0.0f,
+			AoeAngle = 0,
+			AoeWidth = 0.0f,
+			AoeLength = 0.0f,
 		};
 
 		private static readonly JsonSerializerOptions JsonOptions = new()
@@ -198,8 +203,23 @@ namespace CommonData
 		[JsonPropertyName("cast_delay_ms")]
 		public int CastDelayMs { get; set; }
 
-		[JsonPropertyName("animation_key")]
-		public string AnimationKey { get; set; } = string.Empty;
+		[JsonPropertyName("cast_without_target")]
+		public int CastWithoutTarget { get; set; }
+
+		[JsonPropertyName("aoe_type")]
+		public int AoeType { get; set; }
+
+		[JsonPropertyName("aoe_radius")]
+		public float AoeRadius { get; set; }
+
+		[JsonPropertyName("aoe_angle")]
+		public int AoeAngle { get; set; }
+
+		[JsonPropertyName("aoe_width")]
+		public float AoeWidth { get; set; }
+
+		[JsonPropertyName("aoe_length")]
+		public float AoeLength { get; set; }
 
 		[JsonIgnore]
 		public string DisplayName => string.IsNullOrWhiteSpace(Name) ? $"Skill {Id}" : Name;
@@ -217,6 +237,12 @@ namespace CommonData
 		public bool IsFriendlyTargetSkill => TargetType == 2;
 
 		[JsonIgnore]
+		public bool CanCastWithoutTarget => CastWithoutTarget != 0;
+
+		[JsonIgnore]
+		public bool IsAoeSkill => AoeType != 0;
+
+		[JsonIgnore]
 		public float CooldownSeconds => CooldownMs / 1000.0f;
 
 		[JsonIgnore]
@@ -228,7 +254,6 @@ namespace CommonData
 		public void Normalize()
 		{
 			Name ??= string.Empty;
-			AnimationKey ??= string.Empty;
 			SkillType = Mathf.Max(0, SkillType);
 			CastType = Mathf.Max(0, CastType);
 			CostMp = Mathf.Max(0, CostMp);
@@ -239,6 +264,12 @@ namespace CommonData
 			EffectType = Mathf.Max(0, EffectType);
 			EffectValue = Mathf.Max(0.0f, EffectValue);
 			CastDelayMs = Mathf.Max(0, CastDelayMs);
+			CastWithoutTarget = Mathf.Max(0, CastWithoutTarget);
+			AoeType = Mathf.Max(0, AoeType);
+			AoeRadius = Mathf.Max(0.0f, AoeRadius);
+			AoeAngle = Mathf.Max(0, AoeAngle);
+			AoeWidth = Mathf.Max(0.0f, AoeWidth);
+			AoeLength = Mathf.Max(0.0f, AoeLength);
 		}
 	}
 }

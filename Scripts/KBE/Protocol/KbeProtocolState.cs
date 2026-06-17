@@ -60,14 +60,19 @@ public abstract class KbeEntityProtocolState<TEntity> where TEntity : Entity
 		return string.IsNullOrWhiteSpace(name) ? $"{fallbackPrefix} {entityId}" : name;
 	}
 
-	protected static KbeCombatState ResolveCombatState(CombatBase combat)
+	protected static KbeCombatState ResolveCombatState(ulong hitPoints, ulong maxHitPoints, ulong manaPoints)
 	{
-		return combat == null ? KbeCombatState.Empty : new KbeCombatState(combat.hp, combat.max_hp, combat.mp);
+		return new KbeCombatState(hitPoints, maxHitPoints, manaPoints);
 	}
 
 	protected static KbeMotionState ResolveMotionState(MotionBase motion)
 	{
 		return motion == null ? KbeMotionState.Empty : new KbeMotionState(motion.moveSpeed);
+	}
+
+	protected static KbeBuffState ResolveBuffState(BUFF_LIST buffs, ulong syncedAtClientMs)
+	{
+		return KbeBuffState.FromProtocol(buffs, syncedAtClientMs);
 	}
 }
 
@@ -87,8 +92,9 @@ public sealed class KbePlayerProtocolState : KbeEntityProtocolState<Player>
 	public uint SpaceUtype => Entity.space_utype;
 	public bool IsLocalPlayer => Entity.isPlayer();
 	public string DisplayName => ResolveDisplayName(Entity.name, "Player", EntityId);
-	public KbeCombatState Combat => ResolveCombatState(Entity.combat);
+	public KbeCombatState Combat => ResolveCombatState(Entity.hp, Entity.max_hp, Entity.mp);
 	public KbeMotionState Motion => ResolveMotionState(Entity.motion);
+	public KbeBuffState Buffs(ulong syncedAtClientMs) => ResolveBuffState(Entity.buff_list, syncedAtClientMs);
 }
 
 public sealed class KbeMonsterProtocolState : KbeEntityProtocolState<Monster>
@@ -99,8 +105,9 @@ public sealed class KbeMonsterProtocolState : KbeEntityProtocolState<Monster>
 
 	public ulong DatabaseId => Entity.dbid;
 	public string DisplayName => ResolveDisplayName(Entity.name, "Monster", EntityId);
-	public KbeCombatState Combat => ResolveCombatState(Entity.combat);
+	public KbeCombatState Combat => ResolveCombatState(Entity.hp, Entity.max_hp, Entity.mp);
 	public KbeMotionState Motion => ResolveMotionState(Entity.motion);
+	public KbeBuffState Buffs(ulong syncedAtClientMs) => ResolveBuffState(Entity.buff_list, syncedAtClientMs);
 }
 
 public sealed class KbeNpcProtocolState : KbeEntityProtocolState<Npc>

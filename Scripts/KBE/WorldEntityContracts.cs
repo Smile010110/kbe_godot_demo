@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using Godot;
 
 public interface IWorldEntityView
@@ -11,6 +12,9 @@ public interface IWorldEntityView
 	ulong HitPoints { get; }
 	ulong MaxHitPoints { get; }
 	ulong ManaPoints { get; }
+	IReadOnlyList<KbeBuffInfo> Buffs { get; }
+	int ActiveBuffCount { get; }
+	string BuffSummaryText { get; }
 	byte RawMoveSpeed { get; }
 	float MoveSpeedUnits { get; }
 	Vector3 WorldPosition { get; }
@@ -46,4 +50,9 @@ public interface ISelectableWorldEntityController
 	int SelectedEntityId { get; }
 	IWorldEntityView SelectedEntityView { get; }
 	CharacterBody3D SelectionBody { get; }
+}
+
+public interface ISkillCastPresentationController
+{
+	bool TryPlaySkillCastAnimation(SkillCastResult skillCast, double elapsedSeconds);
 }

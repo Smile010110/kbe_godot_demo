@@ -7,26 +7,6 @@ namespace KBEngine
 			RefreshOwnerPresentation();
 		}
 
-		public override void onMax_hpChanged(ulong oldValue)
-		{
-			RefreshOwnerPresentation();
-		}
-
-		public override void onMax_mpChanged(ulong oldValue)
-		{
-			RefreshOwnerPresentation();
-		}
-
-		public override void onHpChanged(ulong oldValue)
-		{
-			RefreshOwnerPresentation();
-		}
-
-		public override void onMpChanged(ulong oldValue)
-		{
-			RefreshOwnerPresentation();
-		}
-
 		private void RefreshOwnerPresentation()
 		{
 			if (owner is global::IWorldEntityRenderHooks entity)

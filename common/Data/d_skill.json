@@ -14,7 +14,12 @@
         "effect_type": 1,
         "effect_value": 1.0,
         "cast_delay_ms": 350,
-        "animation_key": "attack"
+        "cast_without_target": 0,
+        "aoe_type": 0,
+        "aoe_radius": 0.0,
+        "aoe_angle": 0,
+        "aoe_width": 0.0,
+        "aoe_length": 0.0
       },
       "1002": {
         "id": 1002,
@@ -29,11 +34,16 @@
         "effect_type": 1,
         "effect_value": 2.0,
         "cast_delay_ms": 600,
-        "animation_key": "high_spin_attack"
+        "cast_without_target": 0,
+        "aoe_type": 0,
+        "aoe_radius": 0.0,
+        "aoe_angle": 0,
+        "aoe_width": 0.0,
+        "aoe_length": 0.0
       },
       "1003": {
         "id": 1003,
-        "name": "治疗",
+        "name": "治愈",
         "skill_type": 1,
         "cast_type": 1,
         "cost_mp": 20,
@@ -44,7 +54,32 @@
         "effect_type": 2,
         "effect_value": 1.5,
         "cast_delay_ms": 500,
-        "animation_key": "spell_cast"
+        "cast_without_target": 0,
+        "aoe_type": 0,
+        "aoe_radius": 0.0,
+        "aoe_angle": 0,
+        "aoe_width": 0.0,
+        "aoe_length": 0.0
+      },
+      "2001": {
+        "id": 2001,
+        "name": "横扫",
+        "skill_type": 1,
+        "cast_type": 1,
+        "cost_mp": 10,
+        "cooldown": 6000,
+        "gcd_group": 1,
+        "range_max": 0.0,
+        "target_type": 1,
+        "effect_type": 1,
+        "effect_value": 0.8,
+        "cast_delay_ms": 500,
+        "cast_without_target": 1,
+        "aoe_type": 2,
+        "aoe_radius": 5.0,
+        "aoe_angle": 120,
+        "aoe_width": 0.0,
+        "aoe_length": 0.0
       }
     }
   }

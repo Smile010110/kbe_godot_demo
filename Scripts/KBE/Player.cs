@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using Godot;
 using KBEngine;
 using CommonData;
@@ -20,6 +21,7 @@ public class Player : PlayerBase, ILocallyControlledWorldEntity, IWorldEntityRen
 	private long _serverTimeAnchorClientTickMs;
 	private bool _serverTimeUsesMilliseconds;
 	private bool _hasServerTimeAnchor;
+	private KbeBuffState _buffState = KbeBuffState.Empty;
 
 	public Player()
 	{
@@ -50,12 +52,16 @@ public class Player : PlayerBase, ILocallyControlledWorldEntity, IWorldEntityRen
 	public WorldEntityKind EntityKind => WorldEntityKind.Player;
 	public bool IsTeammate => false;
 	public string DisplayName => _protocolState.DisplayName;
-	public string SecondaryInfoText => WorldEntityNameplateText.BuildPlayerLine(HitPoints, ManaPoints, RawMoveSpeed);
+	public string SecondaryInfoText => WorldEntityNameplateText.BuildPlayerLine(HitPoints, MaxHitPoints, ManaPoints, RawMoveSpeed, ActiveBuffCount);
 	public bool ShowSecondaryInfo => true;
 	public ulong HitPoints => _protocolState.Combat.HitPoints;
 	public ulong MaxHitPoints => _protocolState.Combat.MaxHitPoints;
 	public ulong ManaPoints => _protocolState.Combat.ManaPoints;
+	public IReadOnlyList<KbeBuffInfo> Buffs => _buffState.Buffs;
+	public int ActiveBuffCount => _buffState.Count;
+	public string BuffSummaryText => _buffState.SummaryText;
 	public byte RawMoveSpeed => _protocolState.Motion.RawMoveSpeed;
+	public bool CanCastSkills => false;
 
 	public bool TryCastSkill(int skillId, int targetEntityId, string extData = "")
 	{
@@ -71,14 +77,8 @@ public class Player : PlayerBase, ILocallyControlledWorldEntity, IWorldEntityRen
 			return false;
 		}
 
-		if (cellEntityCall?.skill == null)
-		{
-			GD.PushWarning($"Cannot cast skill without SkillComponent cell call. skill={skillId}");
-			return false;
-		}
-
-		cellEntityCall.skill.cast_skill((uint)skillId, targetEntityId, extData ?? string.Empty);
-		return true;
+		GD.PushWarning($"Cannot cast skill because the current server protocol does not expose SkillComponent on Player. skill={skillId}");
+		return false;
 	}
 
 	public float MoveSpeedUnits => _protocolState.Motion.MoveSpeedUnits;
@@ -90,6 +90,7 @@ public class Player : PlayerBase, ILocallyControlledWorldEntity, IWorldEntityRen
 	{
 		base.__init__();
 		SyncServerTimeAnchor(_protocolState.RawServerTime);
+		RefreshBuffState();
 		_renderBinding.Initialize();
 	}
 
@@ -173,6 +174,32 @@ public class Player : PlayerBase, ILocallyControlledWorldEntity, IWorldEntityRen
 		RefreshRenderInfo();
 	}
 
+	public override void onBuff_listChanged(BUFF_LIST oldValue)
+	{
+		RefreshBuffState();
+		RefreshRenderInfo();
+	}
+
+	public override void onHpChanged(ulong oldValue)
+	{
+		RefreshRenderInfo();
+	}
+
+	public override void onMax_hpChanged(ulong oldValue)
+	{
+		RefreshRenderInfo();
+	}
+
+	public override void onMpChanged(ulong oldValue)
+	{
+		RefreshRenderInfo();
+	}
+
+	public override void onMax_mpChanged(ulong oldValue)
+	{
+		RefreshRenderInfo();
+	}
+
 	public override void onPositionChanged(KBVector3 oldValue)
 	{
 		base.onPositionChanged(oldValue);
@@ -201,27 +228,6 @@ public class Player : PlayerBase, ILocallyControlledWorldEntity, IWorldEntityRen
 		{
 			RefreshRenderTransform();
 		}
-	}
-
-	public override void on_skill_result(SKILL_RESULT protocolResult)
-	{
-		SkillProtocolLogger.LogResult("Player", EntityId, protocolResult);
-		var result = SkillCastResult.FromProtocol(protocolResult);
-		if (result == null)
-		{
-			return;
-		}
-
-		HandleSkillResult(result);
-		SkillClientRuntime.DispatchResult(result);
-	}
-
-	public override void on_skill_error(uint skillId, byte errorCode)
-	{
-		var error = SkillCastError.FromProtocol(skillId, errorCode);
-		SkillProtocolLogger.LogError("Player", EntityId, error);
-		HandleSkillError(error);
-		SkillClientRuntime.DispatchError(error);
 	}
 
 	public void HandleSkillResult(SkillCastResult skillCast)
@@ -256,6 +262,11 @@ public class Player : PlayerBase, ILocallyControlledWorldEntity, IWorldEntityRen
 	public void RefreshRenderTransform()
 	{
 		_renderBinding.RefreshTransform();
+	}
+
+	private void RefreshBuffState()
+	{
+		_buffState = _protocolState.Buffs(Time.GetTicksMsec());
 	}
 
 	private bool HasLocalTransformChanged(Vector3 worldPosition, Vector3 worldRotationDegrees)

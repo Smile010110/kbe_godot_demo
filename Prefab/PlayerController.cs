@@ -13,6 +13,18 @@ public partial class PlayerController : WorldEntityControllerBase<Player>
 		public Dictionary<string, string> AnimationKeysByStem { get; } = new(StringComparer.OrdinalIgnoreCase);
 	}
 
+	private sealed class PendingSkillResultText
+	{
+		public PendingSkillResultText(SkillCastResult result, float remainingSeconds)
+		{
+			Result = result;
+			RemainingSeconds = remainingSeconds;
+		}
+
+		public SkillCastResult Result { get; }
+		public float RemainingSeconds { get; set; }
+	}
+
 	private enum PlayerAnimationState
 	{
 		Idle,
@@ -40,8 +52,9 @@ public partial class PlayerController : WorldEntityControllerBase<Player>
 	private const int SelectionRingSegments = 96;
 	private const float GlobalCooldownSeconds = 1.5f;
 	private const float FloatingSkillTextLifetimeSeconds = 0.85f;
-	private const float RemoteSkillResultAnimationStaleSeconds = 0.5f;
+	private const float RemoteSkillCastPresentationGraceSeconds = 0.35f;
 	private const int MaxPendingRemoteSkillAnimations = 32;
+	private const int MaxPendingSkillResultTexts = 32;
 
 	private static readonly Dictionary<uint, PlayerAnimationRuntimeSet> s_sharedAnimationRuntimeSets = new();
 
@@ -69,6 +82,7 @@ public partial class PlayerController : WorldEntityControllerBase<Player>
 	public string CurrentAnimationStateName => _currentAnimationStateName;
 	public string LastSkillCastSummary => _lastSkillCastSummary;
 	public bool IsSkillCastLocked => _isSkillCastPending || _skillAnimationLockRemaining > 0.0f;
+	public bool CanRequestSkills => Player?.CanCastSkills == true;
 	public ISelectableWorldEntityController SelectedTarget { get; private set; }
 
 	private Node3D _cameraPivot;
@@ -94,6 +108,7 @@ public partial class PlayerController : WorldEntityControllerBase<Player>
 	private float _skillAnimationLockRemaining;
 	private string _activeTimedAnimationKey = string.Empty;
 	private readonly List<SkillCastResult> _pendingRemoteSkillAnimations = new();
+	private readonly List<PendingSkillResultText> _pendingSkillResultTexts = new();
 	private string _lastSkillCastSummary = "-";
 	private MeshInstance3D _selectionRing;
 
@@ -115,6 +130,9 @@ public partial class PlayerController : WorldEntityControllerBase<Player>
 
 	public override void _ExitTree()
 	{
+		_pendingRemoteSkillAnimations.Clear();
+		_pendingSkillResultTexts.Clear();
+
 		if (ReferenceEquals(LocalInstance, this))
 		{
 			LocalInstance = null;
@@ -264,6 +282,12 @@ public partial class PlayerController : WorldEntityControllerBase<Player>
 			return;
 		}
 
+		if (!CanRequestSkills)
+		{
+			SetLocalSkillMessage("Skill protocol is not available");
+			return;
+		}
+
 		if (_isSkillCastPending)
 		{
 			return;
@@ -318,8 +342,8 @@ public partial class PlayerController : WorldEntityControllerBase<Player>
 		}
 
 		StartLocalSkillCooldown(skillConfig);
-		SetLocalSkillMessage($"释放 {skillConfig.DisplayName}");
-		StartLocalSkillCast(skillConfig);
+		StartWaitingForSkillResult(skillConfig);
+		SetLocalSkillMessage($"Skill request sent: {skillConfig.DisplayName}");
 	}
 
 	public float GetSkillCooldownRemaining(int skillId)
@@ -352,19 +376,27 @@ public partial class PlayerController : WorldEntityControllerBase<Player>
 		}
 
 		var isCaster = skillCast.CasterId == Player.EntityId;
+		var elapsedSeconds = skillCast.ResolveElapsedCastSeconds(Player.ServerTime);
 		if (isCaster)
 		{
-			if (_isSkillCastPending && skillCast.SkillId == _pendingSkillId)
+			if (_isSkillCastPending && skillCast.SkillId != _pendingSkillId)
+			{
+				GD.PushWarning($"Received local skill result that does not match pending cast. pending={_pendingSkillId}, result={skillCast.SkillId}");
+				CompleteLocalSkillCast();
+			}
+			else if (_isSkillCastPending)
 			{
 				CompleteLocalSkillCast();
 			}
+
+			TryPlaySkillCastAnimation(skillCast, elapsedSeconds);
 		}
 		else
 		{
 			PlayCasterAnimation(skillCast);
 		}
 
-		ShowSkillResultText(skillCast);
+		ScheduleSkillResultText(skillCast, elapsedSeconds);
 		_lastSkillCastSummary = BuildSkillCastSummary(skillCast);
 		return true;
 	}
@@ -378,8 +410,8 @@ public partial class PlayerController : WorldEntityControllerBase<Player>
 
 		var effectText = skillCast.EffectType == SkillEffectType.Heal ? "Heal" : "Damage";
 		var killText = skillCast.IsKill ? " Kill" : string.Empty;
-		var resultTimeText = skillCast.HasResultTime ? $" result_time={skillCast.ResultTime}" : string.Empty;
-		return $"Skill {skillCast.SkillId} {effectText} {skillCast.Value} caster={skillCast.CasterId} target={skillCast.TargetId}{killText}{resultTimeText}";
+		var castTimeText = skillCast.HasCastTime ? $" cast_time={skillCast.CastTime}" : string.Empty;
+		return $"Skill {skillCast.SkillId} {effectText} {skillCast.Value} caster={skillCast.CasterId} target={skillCast.TargetId}{killText}{castTimeText}";
 	}
 
 	public bool HandleServerSkillError(SkillCastError error)
@@ -431,7 +463,7 @@ public partial class PlayerController : WorldEntityControllerBase<Player>
 		return PlayerAnimationState.Attack;
 	}
 
-	private void StartLocalSkillCast(SkillConfigEntry skillConfig)
+	private void StartWaitingForSkillResult(SkillConfigEntry skillConfig)
 	{
 		if (skillConfig == null)
 		{
@@ -441,8 +473,20 @@ public partial class PlayerController : WorldEntityControllerBase<Player>
 		var castDelaySeconds = Mathf.Max(skillConfig.CastDelaySeconds, 0.0f);
 		_isSkillCastPending = true;
 		_skillCastAckTimeoutRemaining = Mathf.Max(SkillCastAckTimeoutSeconds, castDelaySeconds + 1.0f);
-		_skillAnimationLockRemaining = castDelaySeconds;
-		PlaySkillAnimation(skillConfig);
+	}
+
+	private void StartLocalSkillCast(SkillConfigEntry skillConfig, double elapsedSeconds = 0.0d)
+	{
+		if (skillConfig == null)
+		{
+			return;
+		}
+
+		var castDelaySeconds = Mathf.Max(skillConfig.CastDelaySeconds, 0.05f);
+		var remainingSeconds = Mathf.Max(0.0f, castDelaySeconds - (float)elapsedSeconds);
+		_skillAnimationLockRemaining = remainingSeconds;
+
+		PlaySkillAnimation(skillConfig, elapsedSeconds);
 	}
 
 	private void CompleteLocalSkillCast()
@@ -465,33 +509,37 @@ public partial class PlayerController : WorldEntityControllerBase<Player>
 
 	private void PlaySkillAnimation(SkillConfigEntry skillConfig, double elapsedSeconds = 0.0d)
 	{
-		if (TryPlaySkillAnimationKey(skillConfig, elapsedSeconds))
-		{
-			return;
-		}
-
 		var state = ResolveSkillAnimationState(skillConfig);
 		var desiredDuration = Mathf.Max(skillConfig.CastDelaySeconds, 0.05f);
 		PlayAnimationForState(state, force: true, desiredDurationSeconds: desiredDuration, elapsedSeconds: elapsedSeconds);
 	}
 
-	private void PlaySkillResultAnimation(int skillId, double elapsedSeconds)
+	public override bool TryPlaySkillCastAnimation(SkillCastResult skillCast, double elapsedSeconds)
+	{
+		if (skillCast == null)
+		{
+			return true;
+		}
+
+		return PlaySkillCastAnimation(skillCast.SkillId, elapsedSeconds);
+	}
+
+	private bool PlaySkillCastAnimation(int skillId, double elapsedSeconds)
 	{
 		var skillConfig = ResolveSkillConfig(skillId);
 		if (skillConfig == null)
 		{
 			PlayAnimationForState(PlayerAnimationState.Attack, force: true);
-			return;
+			return true;
 		}
 
-		var castDelaySeconds = Mathf.Max(skillConfig.CastDelaySeconds, 0.05f);
-		if (elapsedSeconds > RemoteSkillResultAnimationStaleSeconds)
+		if (IsSkillCastAnimationExpired(skillConfig, elapsedSeconds))
 		{
-			return;
+			return true;
 		}
 
-		_skillAnimationLockRemaining = castDelaySeconds;
-		PlaySkillAnimation(skillConfig);
+		StartLocalSkillCast(skillConfig, elapsedSeconds);
+		return true;
 	}
 
 	private void PlayCasterAnimation(SkillCastResult skillCast)
@@ -509,17 +557,16 @@ public partial class PlayerController : WorldEntityControllerBase<Player>
 			return true;
 		}
 
-		var elapsedSeconds = skillCast.ResolveElapsedResultSeconds(Player?.ServerTime ?? 0UL);
-		if (IsSkillResultAnimationTooLate(skillCast, elapsedSeconds))
+		var elapsedSeconds = skillCast.ResolveElapsedCastSeconds(Player?.ServerTime ?? 0UL);
+		if (IsSkillCastPresentationExpired(skillCast, elapsedSeconds))
 		{
 			return true;
 		}
 
 		var entity = KBEngine.KBEngineApp.app?.findEntity(skillCast.CasterId);
-		if (entity?.renderObj is PlayerController playerController)
+		if (entity?.renderObj is ISkillCastPresentationController presentationController)
 		{
-			playerController.PlaySkillResultAnimation(skillCast.SkillId, elapsedSeconds);
-			return true;
+			return presentationController.TryPlaySkillCastAnimation(skillCast, elapsedSeconds);
 		}
 
 		return entity?.renderObj != null;
@@ -527,7 +574,7 @@ public partial class PlayerController : WorldEntityControllerBase<Player>
 
 	private void QueuePendingRemoteSkillAnimation(SkillCastResult skillCast)
 	{
-		if (skillCast == null || !skillCast.HasResultTime)
+		if (skillCast == null)
 		{
 			return;
 		}
@@ -536,7 +583,8 @@ public partial class PlayerController : WorldEntityControllerBase<Player>
 		{
 			if (pendingSkillCast.SkillId == skillCast.SkillId
 				&& pendingSkillCast.CasterId == skillCast.CasterId
-				&& pendingSkillCast.ResultTime == skillCast.ResultTime)
+				&& pendingSkillCast.TargetId == skillCast.TargetId
+				&& pendingSkillCast.CastTime == skillCast.CastTime)
 			{
 				return;
 			}
@@ -566,43 +614,108 @@ public partial class PlayerController : WorldEntityControllerBase<Player>
 		}
 	}
 
-	private static bool IsSkillResultAnimationTooLate(SkillCastResult skillCast, double elapsedSeconds)
+	private static bool IsSkillCastPresentationExpired(SkillCastResult skillCast, double elapsedSeconds)
 	{
 		if (skillCast == null)
 		{
 			return true;
 		}
 
-		if (!skillCast.HasResultTime)
+		if (!skillCast.HasCastTime)
 		{
 			return false;
 		}
 
-		return elapsedSeconds > RemoteSkillResultAnimationStaleSeconds;
+		var skillConfig = ResolveSkillConfig(skillCast.SkillId);
+		if (skillConfig == null)
+		{
+			return elapsedSeconds > RemoteSkillCastPresentationGraceSeconds;
+		}
+
+		return IsSkillCastAnimationExpired(skillConfig, elapsedSeconds);
 	}
 
-	private bool TryPlaySkillAnimationKey(SkillConfigEntry skillConfig, double elapsedSeconds = 0.0d)
+	private static bool IsSkillCastAnimationExpired(SkillConfigEntry skillConfig, double elapsedSeconds)
 	{
-		if (skillConfig == null
-			|| string.IsNullOrWhiteSpace(skillConfig.AnimationKey)
-			|| _currentAnimationRuntimeSet == null)
+		if (skillConfig == null)
 		{
-			return false;
+			return true;
 		}
 
-		if (!_currentAnimationRuntimeSet.AnimationKeysByStem.TryGetValue(skillConfig.AnimationKey, out var animationKey))
+		var castDelaySeconds = Mathf.Max(skillConfig.CastDelaySeconds, 0.05f);
+		return elapsedSeconds > castDelaySeconds + RemoteSkillCastPresentationGraceSeconds;
+	}
+
+	private void ScheduleSkillResultText(SkillCastResult skillCast, double elapsedSeconds)
+	{
+		if (skillCast == null)
 		{
-			return false;
+			return;
 		}
 
-		var desiredDuration = Mathf.Max(skillConfig.CastDelaySeconds, 0.05f);
-		PlayAnimationByKey(
-			animationKey,
-			force: true,
-			desiredDurationSeconds: desiredDuration,
-			stateName: $"Skill:{skillConfig.AnimationKey}",
-			elapsedSeconds: elapsedSeconds);
-		return true;
+		var impactDelaySeconds = ResolveSkillResultTextDelay(skillCast, elapsedSeconds);
+		if (impactDelaySeconds <= 0.0f)
+		{
+			ShowSkillResultText(skillCast);
+			return;
+		}
+
+		QueuePendingSkillResultText(skillCast, impactDelaySeconds);
+	}
+
+	private static float ResolveSkillResultTextDelay(SkillCastResult skillCast, double elapsedSeconds)
+	{
+		var skillConfig = ResolveSkillConfig(skillCast.SkillId);
+		if (skillConfig == null)
+		{
+			return 0.0f;
+		}
+
+		return Mathf.Max(0.0f, skillConfig.CastDelaySeconds - (float)elapsedSeconds);
+	}
+
+	private void QueuePendingSkillResultText(SkillCastResult skillCast, float delaySeconds)
+	{
+		foreach (var pendingText in _pendingSkillResultTexts)
+		{
+			var pendingResult = pendingText.Result;
+			if (pendingResult.SkillId == skillCast.SkillId
+				&& pendingResult.CasterId == skillCast.CasterId
+				&& pendingResult.TargetId == skillCast.TargetId
+				&& pendingResult.CastTime == skillCast.CastTime)
+			{
+				pendingText.RemainingSeconds = Mathf.Min(pendingText.RemainingSeconds, delaySeconds);
+				return;
+			}
+		}
+
+		if (_pendingSkillResultTexts.Count >= MaxPendingSkillResultTexts)
+		{
+			_pendingSkillResultTexts.RemoveAt(0);
+		}
+
+		_pendingSkillResultTexts.Add(new PendingSkillResultText(skillCast, delaySeconds));
+	}
+
+	private void TickPendingSkillResultTexts(float delta)
+	{
+		if (_pendingSkillResultTexts.Count == 0)
+		{
+			return;
+		}
+
+		for (var index = _pendingSkillResultTexts.Count - 1; index >= 0; index--)
+		{
+			var pendingText = _pendingSkillResultTexts[index];
+			pendingText.RemainingSeconds -= delta;
+			if (pendingText.RemainingSeconds > 0.0f)
+			{
+				continue;
+			}
+
+			_pendingSkillResultTexts.RemoveAt(index);
+			ShowSkillResultText(pendingText.Result);
+		}
 	}
 
 	private void ShowSkillResultText(SkillCastResult skillCast)
@@ -624,7 +737,8 @@ public partial class PlayerController : WorldEntityControllerBase<Player>
 			return false;
 		}
 
-		if (TryResolveSelectableController(skillCast.TargetId, out var targetController) && targetController.SelectionBody != null)
+		var anchorEntityId = skillCast.TargetId > 0 ? skillCast.TargetId : skillCast.CasterId;
+		if (TryResolveSelectableController(anchorEntityId, out var targetController) && targetController.SelectionBody != null)
 		{
 			anchor = targetController.SelectionBody;
 			return true;
@@ -632,7 +746,7 @@ public partial class PlayerController : WorldEntityControllerBase<Player>
 
 		if (SelectedTarget != null
 			&& SelectedTarget.SelectedEntityId > 0
-			&& SelectedTarget.SelectedEntityId == skillCast.TargetId
+			&& SelectedTarget.SelectedEntityId == anchorEntityId
 			&& SelectedTarget.SelectionBody != null)
 		{
 			anchor = SelectedTarget.SelectionBody;
@@ -641,13 +755,7 @@ public partial class PlayerController : WorldEntityControllerBase<Player>
 
 		if (Player != null
 			&& CharacterBody != null
-			&& (skillCast.TargetId == Player.EntityId || skillCast.CasterId == Player.EntityId))
-		{
-			anchor = CharacterBody;
-			return true;
-		}
-
-		if (CharacterBody != null)
+			&& (anchorEntityId == Player.EntityId || (skillCast.TargetId <= 0 && skillCast.CasterId == Player.EntityId)))
 		{
 			anchor = CharacterBody;
 			return true;
@@ -716,6 +824,11 @@ public partial class PlayerController : WorldEntityControllerBase<Player>
 			return 0;
 		}
 
+		if (skillConfig.CanCastWithoutTarget)
+		{
+			return 0;
+		}
+
 		if (SelectedTarget == null || !IsSelectedTargetValid())
 		{
 			return 0;
@@ -733,6 +846,11 @@ public partial class PlayerController : WorldEntityControllerBase<Player>
 		}
 
 		if (skillConfig.IsSelfTargetSkill || skillConfig.IsFriendlyTargetSkill)
+		{
+			return true;
+		}
+
+		if (skillConfig.CanCastWithoutTarget)
 		{
 			return true;
 		}
@@ -1011,6 +1129,7 @@ public partial class PlayerController : WorldEntityControllerBase<Player>
 
 		TickSkillCooldowns((float)delta);
 		TickSkillCastState((float)delta);
+		TickPendingSkillResultTexts((float)delta);
 		FlushPendingRemoteSkillAnimations();
 
 		if (_isSkillCastPending)

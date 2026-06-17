@@ -2,6 +2,7 @@ using Godot;
 
 public abstract partial class WorldEntityControllerBase<TEntity> : Node3D, IWorldEntityController<TEntity>
 	, ISelectableWorldEntityController
+	, ISkillCastPresentationController
 	where TEntity : class, IWorldEntityView
 {
 	[Export]
@@ -42,6 +43,12 @@ public abstract partial class WorldEntityControllerBase<TEntity> : Node3D, IWorl
 	private bool _hasInitialTransform;
 	private ulong _lastTargetUpdateTimeMs;
 	private float _targetInterpolationSeconds = 0.1f;
+	private bool _hasPresentedHeadInfo;
+	private ulong _presentedHitPoints;
+	private ulong _presentedMaxHitPoints;
+	private ulong _presentedManaPoints;
+	private int _presentedActiveBuffCount;
+	private byte _presentedRawMoveSpeed;
 	private const float MovementFacingEpsilonSquared = 0.0001f;
 
 	protected abstract string CharacterBodyPath { get; }
@@ -80,6 +87,11 @@ public abstract partial class WorldEntityControllerBase<TEntity> : Node3D, IWorl
 		return EntityView != null && EntityView.IsLocallyControlled ? 0 : -1;
 	}
 
+	public virtual bool TryPlaySkillCastAnimation(SkillCastResult skillCast, double elapsedSeconds)
+	{
+		return CharacterBody != null;
+	}
+
 	public virtual float GetMoveSpeed()
 	{
 		if (EntityView == null)
@@ -103,6 +115,7 @@ public abstract partial class WorldEntityControllerBase<TEntity> : Node3D, IWorl
 		InfoLabel.Text = EntityView.SecondaryInfoText;
 		InfoLabel.Visible = EntityView.ShowSecondaryInfo;
 		UpdateHealthBar();
+		RecordPresentedHeadInfo();
 	}
 
 	public virtual void UpdateFromEntity()
@@ -131,6 +144,8 @@ public abstract partial class WorldEntityControllerBase<TEntity> : Node3D, IWorl
 		{
 			return;
 		}
+
+		RefreshHeadInfoIfStatsChanged();
 
 		if (EntityView.IsLocallyControlled)
 		{
@@ -265,6 +280,40 @@ public abstract partial class WorldEntityControllerBase<TEntity> : Node3D, IWorl
 	{
 	}
 
+	private void RefreshHeadInfoIfStatsChanged()
+	{
+		if (EntityView == null)
+		{
+			return;
+		}
+
+		if (!_hasPresentedHeadInfo
+			|| _presentedHitPoints != EntityView.HitPoints
+			|| _presentedMaxHitPoints != EntityView.MaxHitPoints
+			|| _presentedManaPoints != EntityView.ManaPoints
+			|| _presentedActiveBuffCount != EntityView.ActiveBuffCount
+			|| _presentedRawMoveSpeed != EntityView.RawMoveSpeed)
+		{
+			SetHeadInfo();
+		}
+	}
+
+	private void RecordPresentedHeadInfo()
+	{
+		if (EntityView == null)
+		{
+			_hasPresentedHeadInfo = false;
+			return;
+		}
+
+		_presentedHitPoints = EntityView.HitPoints;
+		_presentedMaxHitPoints = EntityView.MaxHitPoints;
+		_presentedManaPoints = EntityView.ManaPoints;
+		_presentedActiveBuffCount = EntityView.ActiveBuffCount;
+		_presentedRawMoveSpeed = EntityView.RawMoveSpeed;
+		_hasPresentedHeadInfo = true;
+	}
+
 	private void UpdateHealthBar()
 	{
 		if (EntityView == null || NameLabel == null)
@@ -273,7 +322,8 @@ public abstract partial class WorldEntityControllerBase<TEntity> : Node3D, IWorl
 			return;
 		}
 
-		if (EntityView.MaxHitPoints == 0UL)
+		var maxHitPoints = EntityView.MaxHitPoints;
+		if (maxHitPoints == 0UL)
 		{
 			SetHealthBarVisible(false);
 			return;
@@ -286,7 +336,7 @@ public abstract partial class WorldEntityControllerBase<TEntity> : Node3D, IWorl
 		}
 
 		_healthBarRoot.Visible = true;
-		var ratio = Mathf.Clamp((float)((double)EntityView.HitPoints / EntityView.MaxHitPoints), 0.0f, 1.0f);
+		var ratio = Mathf.Clamp((float)((double)EntityView.HitPoints / maxHitPoints), 0.0f, 1.0f);
 		var displayRatio = Mathf.Max(ratio, 0.01f);
 		_healthBarFill.Visible = true;
 		_healthBarFill.Scale = new Vector3(displayRatio, 1.0f, 1.0f);

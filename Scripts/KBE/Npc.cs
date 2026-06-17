@@ -1,3 +1,5 @@
+using System;
+using System.Collections.Generic;
 using Godot;
 using KBEngine;
 
@@ -24,6 +26,9 @@ public class Npc : NpcBase, IServerDrivenWorldEntity, IWorldEntityRenderHooks
 	public ulong HitPoints => 0UL;
 	public ulong MaxHitPoints => 0UL;
 	public ulong ManaPoints => 0UL;
+	public IReadOnlyList<KbeBuffInfo> Buffs => Array.Empty<KbeBuffInfo>();
+	public int ActiveBuffCount => 0;
+	public string BuffSummaryText => string.Empty;
 	public byte RawMoveSpeed => _protocolState.Motion.RawMoveSpeed;
 	public float MoveSpeedUnits => _protocolState.Motion.MoveSpeedUnits;
 	public Vector3 WorldPosition => _protocolState.WorldPosition;
